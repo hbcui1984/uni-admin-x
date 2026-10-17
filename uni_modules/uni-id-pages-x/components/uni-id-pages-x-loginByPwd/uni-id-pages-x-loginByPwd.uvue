@@ -1,0 +1,176 @@
+<template>
+	<view class="login-root">
+		<view class="form">
+			<text class="pwd-login-title">账号密码登录</text>
+			<uni-id-pages-x-input class="my-input" title="账号" placeholder="请输入后台账号" v-model="data.username" ref="usernameRef" @confirm="loginByPwd"></uni-id-pages-x-input>
+			<uni-id-pages-x-input class="my-input" title="密码" v-model="data.password" :password="true" ref="passwordRef" @confirm="loginByPwd"></uni-id-pages-x-input>
+			<uni-id-pages-x-agreements class="agreements-box" ref="agreementsRef" scope="login" />
+			<button class="uni-btn" type="primary" :loading="submitting" :disabled="submitting || data.password.length == 0 || data.username.trim().length == 0" @click="loginByPwd">{{ submitting ? '登录中' : '登录' }}</button>
+		</view>
+
+		<view class="link-group">
+			<text class="link link-group-link" @click="toRetrievePwd">忘记密码</text>
+			<text class="link link-group-link" @click="toRegister">注册账号</text>
+		</view>
+
+		<uni-popup-captcha v-if="data.needCaptcha" ref="popupCaptchaRef" scene="login-by-pwd" v-model="data.loginCaptcha" title="请输入验证码"></uni-popup-captcha>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { state } from '@/uni_modules/uni-id-pages-x/store.uts';
+	import { loginSuccess, getAccountRedirect } from '@/uni_modules/uni-id-pages-x/common/common.uts';
+	import { getAccountCloudObject, accountErrorMessage } from '@/uni_modules/uni-id-pages-x/common/client-cloud.uts';
+	import { accountRouteUrl, accountRegisterPath } from '../../common/account-route';
+
+	const submitting = ref(false)
+	const completed = ref(false)
+	const usernameRef = ref<UniIdPagesXInputComponentPublicInstance | null>(null)
+	const passwordRef = ref<UniIdPagesXInputComponentPublicInstance | null>(null)
+	const agreementsRef = ref<UniIdPagesXAgreementsComponentPublicInstance | null>(null)
+	const popupCaptchaRef = ref<UniPopupCaptchaComponentPublicInstance | null>(null)
+	const data = reactive({
+		username: "",
+		password: "",
+		needCaptcha: false,
+		loginCaptcha: ""
+	})
+
+	function showPopupCaptcha(callback : () => void) {
+		agreementsRef.value!.showPopupAgreements(callback)
+	}
+
+	async function loginByPwd() {
+		if (submitting.value) return
+		data.username = data.username.trim()
+		if (data.username.length == 0) {
+			usernameRef.value?.setFocus(true)
+			return uni.showToast({
+				title: '请输入后台账号',
+				icon: 'none',
+				duration: 3000
+			})
+		}
+		if (data.password.length == 0) {
+			passwordRef.value!.setFocus(true)
+			return uni.showToast({
+				title: '请输入密码',
+				icon: 'none',
+				duration: 3000
+			})
+		}
+		if (data.needCaptcha && data.loginCaptcha.length != 4) {
+			popupCaptchaRef.value!.open(() => {
+				loginByPwd()
+			})
+			return uni.showToast({
+				title: '请输入验证码',
+				icon: 'none',
+				duration: 3000
+			})
+		}
+
+		const payload : UTSJSONObject = {
+			"password": data.password,
+			"captcha": data.loginCaptcha
+		}
+
+		let keyName = 'username'
+		if (/^1\d{10}$/.test(data.username)) {
+			keyName = "mobile"
+		} else if (/@/.test(data.username)) {
+			keyName = "email"
+		}
+		payload.set(keyName, data.username)
+
+		if (state.pendingAgreements) {
+			showPopupCaptcha(() => {
+				if (!state.pendingAgreements) {
+					loginByPwd()
+				}
+			})
+			return false
+		}
+
+		submitting.value = true
+		uni.showLoading({
+			title: '登录中',
+			mask: false
+		})
+
+		try {
+			const uniIdCo = getAccountCloudObject('uni-id-co')
+			const e = await uniIdCo.login(payload)
+			loginSuccess(e)
+			completed.value = true
+		} catch (err) {
+				const error = err as UniCloudError
+				console.error(error)
+				if (error?.code == 'uni-id-captcha-required' || error?.errCode == 'uni-id-captcha-required') {
+					data.needCaptcha = true
+					nextTick(() => {
+						popupCaptchaRef.value?.open(() => { loginByPwd() })
+					})
+				} else {
+					uni.showToast({
+						title: accountErrorMessage(err),
+						icon: 'none',
+						duration: 3000
+					})
+				}
+		} finally {
+			submitting.value = completed.value
+			uni.hideLoading()
+			data.loginCaptcha = ""
+		}
+	}
+
+	function toRegister() {
+		if (submitting.value) return
+		uni.navigateTo({
+			url: accountRouteUrl(accountRegisterPath, getAccountRedirect())
+		})
+	}
+
+	function toRetrievePwd() {
+		if (submitting.value) return
+		let url = "/uni_modules/uni-id-pages-x/pages/retrieve/retrieve"
+		if (/^1\d{10}$/.test(data.username)) {
+			url += "?mobile=" + encodeURIComponent(data.username)
+		} else if (/@/.test(data.username)) {
+			url += "?email=" + encodeURIComponent(data.username)
+		}
+		uni.navigateTo({ url })
+	}
+
+	onMounted(() => {
+		setTimeout(() => {
+				usernameRef.value?.setFocus(true)
+		}, 300)
+	})
+</script>
+
+<style lang="scss" scoped>
+	@import url("/uni_modules/uni-id-pages-x/common/common.scss");
+	.login-root {
+		width: 100%;
+		max-width: 400px;
+		flex-direction: column;
+	}
+	.pwd-login-title {
+		font-size: 20px;
+		font-weight: 700;
+	}
+
+	.link-group {
+		flex-direction: row;
+		width: 100%;
+		margin-top: 15px;
+		justify-content: space-between;
+	}
+
+	.link-group-link {
+		color: #083679;
+		font-size: 14px;
+	}
+</style>

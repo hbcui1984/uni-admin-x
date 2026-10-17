@@ -1,0 +1,118 @@
+// export type AvatarFile = {
+//   // 名称
+//   name:string,
+//   // 格式
+//   extname:string,
+//   // 链接
+//   url:string,
+// }
+
+// export type UserInfo = {
+//   _id: String | null,
+//   avatar_file: AvatarFile | null,
+//   nickname:string| null,
+//   mobile:string| null,
+// }
+
+export type State = {
+	pendingAgreements : boolean,
+	agreementsAccepted : boolean,
+	isLogin : boolean,
+	userInfo : UTSJSONObject
+}
+// 实例化为state
+export const state = reactive<State>({
+	pendingAgreements: false,
+	agreementsAccepted: false,
+	userInfo: {
+		"_id": null,
+		"avatar_file": null,
+		"nickname": null,
+		"mobile": null,
+	} as UTSJSONObject,
+	isLogin: false
+})
+
+
+function initState() {
+	try {
+		const currentUser = uniCloud.config == null ? null : uniCloud.getCurrentUserInfo()
+		state.isLogin = currentUser != null && currentUser.uid != null && currentUser.tokenExpired > Date.now()
+		if (!state.isLogin) {
+			state.userInfo = {} as UTSJSONObject
+			uni.removeStorageSync('uni-id-pages-x-userInfo')
+			return
+		}
+		let userInfo = uni.getStorageSync('uni-id-pages-x-userInfo')
+		if (userInfo instanceof UTSJSONObject) {
+			state.userInfo = userInfo
+			// console.log('init userInfo',userInfo);
+		}
+	} catch (e) {
+		state.isLogin = false
+		state.userInfo = {} as UTSJSONObject
+		console.error('init userInfo error', e);
+	}
+};
+initState()
+
+
+type Mutations = {
+	updateUserInfo(param : null | UTSJSONObject) : void
+}
+export const mutations : Mutations = {
+	updateUserInfo: function (param: null | UTSJSONObject) {
+	  // console.log('updateUserInfo', param);// param为 null 时从云端获取数据更新，为UTSJSONObject时直接根据传入的值来更新
+	  function afterUpdateUserInfo() {
+	    uni.setStorageSync('uni-id-pages-x-userInfo', state.userInfo)
+	  }
+	  const user_id = uniCloud.getCurrentUserInfo()?.uid
+	  if(user_id == null){
+	    return
+	  }
+	  try {
+	  const db = uniCloud.databaseForJQL()
+	  if (db == null) return
+	  const usersCollection = db.collection('uni-id-users')
+	  if (param == null) {
+	    usersCollection
+	      .doc(user_id)
+	      .field('_id,username,nickname,avatar_file,mobile')
+	      .get()
+	      .then(async res => {
+	        if (res?.data == null || res.data.length == 0 || uniCloud.getCurrentUserInfo()?.uid != user_id) return
+	        const uniIdCo = uniCloud.importObject('uni-id-co', {
+	          customUI: true
+	        })
+	
+	        if (uniIdCo == null) throw new Error('账号云对象不可用')
+	        const realNameInfo = await uniIdCo.getRealNameInfo()
+	        if (uniCloud.getCurrentUserInfo()?.uid == user_id) {
+	            state.userInfo = UTSJSONObject.assign(res.data[0], {
+	              realNameInfo
+	            })
+	            afterUpdateUserInfo()
+	        }
+	      })
+	      .catch((err: any | null) => {
+	        const error = err as UniCloudError
+	        console.error('刷新账号资料失败', error)
+	      })
+	
+	  } else {
+	    param.toMap().forEach((value, key) => {
+	      state.userInfo[key] = value
+	    })
+	    if(param.mobile == "" || param.mobile == null){
+	      usersCollection
+	        .doc(user_id)
+	        .update(param)
+	        .catch((error : any | null) => console.error('更新账号资料失败', error))
+	    }
+	    afterUpdateUserInfo()
+	  }
+	  } catch (error) {
+	    console.error('账号资料服务不可用', error)
+	  }
+	}
+};

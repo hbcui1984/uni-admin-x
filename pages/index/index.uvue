@@ -1,0 +1,84 @@
+<template>
+  <scroll-view class="home-page" scroll-y>
+    <view class="home-content">
+      <view class="page-heading"><text class="page-title">工作台</text><text class="page-subtitle">uni-admin-x</text></view>
+      <view class="status-band">
+        <uni-icons :type="navigation.status === 'error' ? 'info' : 'home'" :size="20" color="#909399" />
+        <text class="status-text">{{ statusText }}</text>
+        <button v-if="navigation.loggedIn && navigation.status !== 'loading'" class="refresh-button" title="重新加载菜单" @click="retry"><uni-icons type="reload" :size="18" color="#606266" /></button>
+      </view>
+      <view v-if="!navigation.loggedIn" class="empty-state">
+        <text class="empty-title">请先登录</text><text class="empty-text">登录状态已失效，请重新登录以查看可访问的管理功能。</text>
+        <button class="primary-button" @click="login"><text class="primary-label">前往登录</text></button>
+      </view>
+      <template v-else>
+        <text class="section-title">常用管理</text>
+        <view v-if="entries.length" class="entry-list">
+          <button v-for="entry in entries" :key="entry.module" class="entry-row" @click="openEntry(entry)">
+            <uni-icons :type="entry.icon" :size="22" color="#606266" />
+            <text class="entry-name">{{ entry.name }}</text>
+            <uni-icons type="arrowright" :size="16" color="#909399" />
+          </button>
+        </view>
+        <view v-else class="empty-state">
+          <uni-icons type="locked" :size="30" color="#b4b8bf" />
+          <text class="empty-title">暂无管理权限</text>
+          <text class="empty-text">当前账号未获授核心管理功能的访问权限，请联系管理员。</text>
+        </view>
+        <text v-if="navigation.status === 'error'" class="deployment-note">菜单服务暂不可用。请管理员检查服务空间关联、opendb-admin-menus 集合及 schema 部署状态；管理页面仍由云端权限校验。</text>
+      </template>
+    </view>
+  </scroll-view>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useStore } from 'vuex'
+import { onShow } from '@dcloudio/uni-app'
+import uniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.vue'
+import { LOGIN_URL, hasPermission, navigateAdmin, useAdminNavigation } from '@/common/admin-navigation'
+
+const store = useStore()
+const { navigation, entries, retry } = useAdminNavigation(store)
+const statusText = computed(() => {
+  if (!navigation.loggedIn) return '当前未登录'
+  if (navigation.status === 'loading') return '正在读取管理菜单…'
+  if (navigation.status === 'error') return '菜单加载失败，可重试或联系管理员检查部署。'
+  if (navigation.status === 'empty') return '尚未读取到已启用菜单，菜单数据可能尚未初始化。'
+  if (!navigation.menus.length) return '当前账号暂无可访问的已迁移菜单。'
+  return '已载入当前账号可访问的管理菜单。'
+})
+function login() { uni.reLaunch({ url: LOGIN_URL }) }
+function openEntry(entry: { module: string; permissions: string[] }) {
+  if (!entry.permissions.some(hasPermission)) {
+    uni.showToast({ title: '当前账号无权访问', icon: 'none' })
+    return
+  }
+  navigateAdmin(`/pages/system/${entry.module}/list`)
+}
+onShow(() => {
+  store.commit('app/SET_ROUTES', [{ name: '首页', to: { path: '/pages/index/index' } }])
+})
+</script>
+
+<style scoped>
+.home-page { flex: 1; height: 100%; background-color: #f5f7fa; }
+.home-content { display: flex; flex-direction: column; padding: 24px; }
+.page-heading { display: flex; flex-direction: row; align-items: center; padding-bottom: 20px; border-bottom: 1px solid #e4e7ed; }
+.page-title { font-size: 20px; font-weight: 500; color: #303133; }
+.page-subtitle { font-size: 13px; color: #909399; margin-left: 16px; }
+.status-band { display: flex; flex-direction: row; align-items: center; min-height: 52px; padding: 12px 0; border-bottom: 1px solid #e4e7ed; }
+.status-text { flex: 1; margin: 0 12px; font-size: 13px; line-height: 22px; color: #606266; }
+.refresh-button { display: flex; flex-direction: row; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; margin: 0; border: 1px solid #dcdfe6; border-radius: 4px; background-color: #ffffff; }
+.section-title { margin: 24px 0 12px; font-size: 15px; font-weight: 500; color: #303133; }
+.entry-list { display: flex; flex-direction: column; width: 100%; max-width: 800px; border-top: 1px solid #e4e7ed; }
+.entry-row { display: flex; flex-direction: row; align-items: center; width: 100%; min-height: 60px; margin: 0; padding: 16px; border: 0; border-bottom: 1px solid #e4e7ed; border-radius: 0; background-color: #ffffff; text-align: left; cursor: pointer; }
+.entry-name { flex: 1; margin: 0 16px; font-size: 14px; color: #303133; }
+.empty-state { display: flex; flex-direction: column; align-items: center; padding: 48px 16px; }
+.empty-title { font-size: 16px; color: #606266; margin: 12px 0; }
+.empty-text { max-width: 540px; font-size: 14px; line-height: 24px; color: #909399; text-align: center; }
+.primary-button { margin: 20px 0 0; padding: 0 20px; height: 36px; border: 0; border-radius: 4px; background-color: #2979ff; }
+.primary-label { font-size: 14px; line-height: 36px; color: #ffffff; }
+.deployment-note { max-width: 800px; margin-top: 24px; font-size: 13px; line-height: 22px; color: #909399; }
+@media screen and (max-width: 767px) { .home-content { padding: 16px; } }
+</style>

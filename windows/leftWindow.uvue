@@ -1,0 +1,121 @@
+<template>
+  <scroll-view class="admin-sidebar" scroll-y>
+    <view class="sidebar-inner">
+      <button class="menu-row" :class="{ 'menu-active': active === HOME_URL }" @click="navigateAdmin(HOME_URL)">
+        <uni-icons type="home" :size="18" :color="active === HOME_URL ? '#2979ff' : '#909399'" />
+        <text class="menu-label" :class="{ 'label-active': active === HOME_URL }">首页</text>
+      </button>
+      <text v-if="!navigation.loggedIn" class="sidebar-message">登录后查看管理菜单</text>
+      <text v-else-if="navigation.status === 'loading'" class="sidebar-message">正在加载菜单…</text>
+      <view v-else-if="navigation.status === 'error'" class="sidebar-state">
+        <text class="state-title">菜单加载失败</text>
+        <text class="sidebar-message">请检查服务空间关联、菜单集合及 schema 是否已部署。</text>
+        <text class="error-detail">{{ navigation.error }}</text>
+        <button class="retry-button" @click="retry"><uni-icons type="reload" :size="16" color="#2979ff" /><text class="retry-label">重试</text></button>
+      </view>
+      <template v-else>
+        <button v-for="row in visibleRows" :key="row.menu_id" class="menu-row"
+          :class="{ 'menu-active': isActive(row) }" :style="{ paddingLeft: (20 + row.depth * 18) + 'px' }" @click="selectMenu(row)">
+          <uni-icons :type="menuIcon(row)" :size="18" :color="isActive(row) ? '#2979ff' : '#909399'" />
+          <text class="menu-label" :class="{ 'label-active': isActive(row) }">{{ row.name }}</text>
+          <uni-icons v-if="row.children.length" :type="expanded.includes(row.menu_id) ? 'arrowup' : 'arrowdown'" :size="12" color="#909399" />
+        </button>
+        <text v-if="!visibleRows.length" class="sidebar-message">{{ navigation.status === 'empty' ? '尚无已启用菜单，请管理员确认菜单数据已初始化。' : '暂无可访问的已迁移菜单，请联系管理员分配权限。' }}</text>
+      </template>
+    </view>
+  </scroll-view>
+</template>
+
+<script setup lang="ts">
+import { computed, getCurrentInstance, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useStore } from 'vuex'
+import uniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.vue'
+import { HOME_URL, coreEntries, currentRoute, normalizeRoute, navigateAdmin, useAdminNavigation } from '@/common/admin-navigation'
+import type { AdminMenu } from '@/common/admin-navigation'
+
+type MenuRow = AdminMenu & { depth: number }
+const store = useStore()
+const { navigation, retry } = useAdminNavigation(store)
+const proxy = getCurrentInstance()?.proxy as any
+const active = ref(currentRoute())
+const expanded = ref<string[]>([])
+let routeTimer: ReturnType<typeof setInterval> | undefined
+const visibleRows = computed(() => {
+  const rows: MenuRow[] = []
+  const visit = (menus: AdminMenu[], depth: number) => {
+    menus.forEach(menu => {
+      if (menu.url === HOME_URL && !menu.children.length) return
+      rows.push({ ...menu, depth })
+      if (expanded.value.includes(menu.menu_id)) visit(menu.children, depth + 1)
+    })
+  }
+  visit(navigation.menus, 0)
+  return rows
+})
+function isActive(menu: AdminMenu) {
+  if (!menu.url) return false
+  return active.value === menu.url || (menu.url.endsWith('/list') && active.value.startsWith(menu.url.slice(0, -4)))
+}
+function menuIcon(menu: AdminMenu) {
+  if (menu.children.length) return 'list'
+  const entry = coreEntries.find(item => menu.url.startsWith(`/pages/system/${item.module}/`))
+  return entry?.icon || (menu.icon?.startsWith('uni-icons-') ? menu.icon.slice(10) : 'list')
+}
+function selectMenu(menu: AdminMenu) {
+  if (menu.children.length) {
+    expanded.value = expanded.value.includes(menu.menu_id) ? expanded.value.filter(id => id !== menu.menu_id) : [...expanded.value, menu.menu_id]
+  } else if (menu.url) navigateAdmin(menu.url)
+}
+function syncRoute(path?: string) {
+  active.value = normalizeRoute(path || proxy?.$route?.fullPath || currentRoute())
+  if (!navigation.loggedIn) return
+  let family: AdminMenu[] = []
+  const visit = (menus: AdminMenu[], parents: AdminMenu[]): boolean => menus.some(menu => {
+    const chain = [...parents, menu]
+    if (isActive(menu)) { family = chain; return true }
+    return visit(menu.children, chain)
+  })
+  visit(navigation.menus, [])
+  family.slice(0, -1).forEach(menu => {
+    if (!expanded.value.includes(menu.menu_id)) expanded.value.push(menu.menu_id)
+  })
+  const routes: any[] = [{ name: '首页', to: { path: HOME_URL } }]
+  family.forEach(menu => { if (menu.url !== HOME_URL) routes.push({ name: menu.name, ...(menu.url ? { to: { path: menu.url } } : {}) }) })
+  if (!family.length && active.value !== HOME_URL) {
+    const entry = coreEntries.find(item => active.value.startsWith(`/pages/system/${item.module}/`))
+    if (entry) routes.push({ name: entry.name })
+    else routes.push({ name: active.value === '/pages/error/404' ? '页面不存在' : '个人资料' })
+  }
+  const action = active.value.split('/').pop()
+  if (action === 'add' || action === 'edit') routes.push({ name: action === 'add' ? '新增' : '编辑' })
+  store.commit('app/SET_ROUTES', routes)
+}
+watch(() => proxy?.$route?.fullPath, path => syncRoute(path), { immediate: true })
+watch(() => navigation.revision, () => {
+  if (!navigation.loggedIn) expanded.value = []
+  syncRoute()
+})
+onMounted(() => {
+  syncRoute()
+  routeTimer = setInterval(() => {
+    const path = normalizeRoute(proxy?.$route?.fullPath || currentRoute())
+    if (path !== active.value) syncRoute(path)
+  }, 500)
+})
+onUnmounted(() => { if (routeTimer !== undefined) clearInterval(routeTimer) })
+</script>
+
+<style scoped>
+.admin-sidebar { width: 240px; height: 100%; background-color: #ffffff; border-right: 1px solid #e4e7ed; }
+.sidebar-inner { display: flex; flex-direction: column; padding: 12px 0 24px; }
+.menu-row { display: flex; flex-direction: row; align-items: center; width: 100%; min-height: 46px; margin: 0; padding: 10px 20px; text-align: left; background-color: transparent; border: 0; border-radius: 0; cursor: pointer; }
+.menu-active { background-color: #ecf5ff; }
+.menu-label { flex: 1; min-width: 0; margin-left: 12px; margin-right: 8px; font-size: 14px; line-height: 22px; color: #606266; overflow-wrap: anywhere; }
+.label-active { color: #2979ff; }
+.sidebar-message { margin: 12px 20px; font-size: 13px; line-height: 22px; color: #909399; }
+.sidebar-state { display: flex; flex-direction: column; padding: 16px 0; }
+.state-title { margin: 0 20px; font-size: 14px; color: #606266; }
+.error-detail { margin: 0 20px 12px; font-size: 12px; color: #c45656; line-height: 20px; overflow-wrap: anywhere; }
+.retry-button { display: flex; flex-direction: row; align-items: center; justify-content: center; margin: 0 20px; padding: 0 12px; height: 32px; background-color: #ffffff; border: 1px solid #dcdfe6; border-radius: 4px; }
+.retry-label { margin-left: 6px; font-size: 13px; color: #2979ff; }
+</style>

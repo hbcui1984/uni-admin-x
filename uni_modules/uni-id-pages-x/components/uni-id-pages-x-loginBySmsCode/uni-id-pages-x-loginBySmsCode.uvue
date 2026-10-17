@@ -1,0 +1,99 @@
+<template>
+	<view>
+		<text class="tip">未注册的账号验证通过后将自动注册</text>
+
+		<view class="form">
+			<uni-id-pages-x-smsCode ref="smsCodeRef" @input="smsCodeInput"
+				:checkAgreements="true"></uni-id-pages-x-smsCode>
+			<uni-id-pages-x-agreements class="agreements-box" ref="agreementsRef" scope="login" />
+			<button class="uni-btn" type="primary" @click="sendSmsCode">获取手机验证码</button>
+		</view>
+
+		<uni-popup-captcha ref="captchaRef" scene="login-by-sms" v-model="captcha" title="请输入验证码"></uni-popup-captcha>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { loginSuccess } from '@/uni_modules/uni-id-pages-x/common/common.uts';
+
+	const uniIdCo = uniCloud.importObject("uni-id-co", { "customUI": true })
+	const smsCodeRef = ref<UniIdPagesXSmsCodeComponentPublicInstance | null>(null)
+	const agreementsRef = ref<UniIdPagesXAgreementsComponentPublicInstance | null>(null)
+	const captchaRef = ref<UniPopupCaptchaComponentPublicInstance | null>(null)
+	const captcha = ref("")
+
+	function sendSmsCode() {
+		smsCodeRef.value!.sendSmsCode()
+	}
+
+	function smsCodeInput(param : UTSJSONObject) {
+		const mobile = param.getString("mobile") as string
+		const code = param.getString("code") as string
+		if (mobile.length == 11 && code.length == 6) {
+			login(param)
+		}
+	}
+
+	function showPopupCaptcha(callback : () => void) {
+		openAgreementsPopup(callback)
+	}
+
+	function openAgreementsPopup(callback : () => void) {
+		agreementsRef.value!.showPopupAgreements(callback)
+	}
+
+	function openCaptchaPopup(callback : () => void) {
+		if (captchaRef.value == null) {
+			return
+		}
+		captchaRef.value!.open(callback)
+	}
+
+	function login(param : UTSJSONObject) {
+		uni.showLoading({ "title": "登录中" })
+
+		uniIdCo.loginBySms(param)
+			.finally(() : void => {
+				uni.hideLoading()
+			})
+			.then<void>((e : UTSJSONObject) : void => {
+				// console.log('e----',e)
+				smsCodeRef.value!.hideCodeInput()
+				uni.showToast({
+					title: '登录成功',
+					icon: 'none'
+				})
+				smsCodeRef.value!.clearCodeInput()
+				loginSuccess(e)
+			})
+			.catch<void>((err : any | null) : void => {
+				const error = err as UniCloudError
+				console.error(error)
+				console.error(error.code)
+				if (["uni-id-captcha-required", "uni-captcha-verify-fail"].includes(error.code as string)) {
+					openCaptchaPopup(() => {
+						login(param)
+					})
+				} else {
+					uni.showToast({
+						title: error.message,
+						icon: 'none',
+						mask: false
+					})
+					smsCodeRef.value!.clearCodeInput()
+					captcha.value = ""
+				}
+			})
+	}
+
+	defineExpose({
+		showPopupCaptcha
+	})
+</script>
+
+<style>
+	.tip {
+		font-size: 12px;
+		margin-bottom: 10px;
+	}
+</style>

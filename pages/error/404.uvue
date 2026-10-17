@@ -1,0 +1,27 @@
+<template>
+  <view class="not-found">
+    <text class="error-code">404</text>
+    <text class="error-title">页面不存在或尚未开放</text>
+    <text class="error-description">当前地址不可用，请返回首页选择可访问的管理功能。</text>
+    <button class="home-button" @click="goHome"><uni-icons type="home" :size="18" color="#ffffff" /><text class="home-label">返回首页</text></button>
+  </view>
+</template>
+
+<script setup lang="ts">
+import { onShow } from '@dcloudio/uni-app'
+import { useStore } from 'vuex'
+import uniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.vue'
+import { HOME_URL } from '@/common/admin-navigation'
+const store = useStore()
+function goHome() { uni.reLaunch({ url: HOME_URL }) }
+onShow(() => store.commit('app/SET_ROUTES', [{ name: '首页', to: { path: HOME_URL } }, { name: '页面不存在' }]))
+</script>
+
+<style scoped>
+.not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; min-height: 360px; padding: 48px 24px; background-color: #f5f7fa; }
+.error-code { font-size: 64px; font-weight: 600; line-height: 80px; color: #b4b8bf; }
+.error-title { font-size: 20px; line-height: 30px; margin-top: 16px; color: #303133; text-align: center; }
+.error-description { max-width: 500px; font-size: 14px; line-height: 24px; margin-top: 12px; color: #909399; text-align: center; }
+.home-button { display: flex; flex-direction: row; align-items: center; justify-content: center; margin: 28px 0 0; height: 36px; padding: 0 18px; background-color: #2979ff; border: 0; border-radius: 4px; }
+.home-label { margin-left: 8px; font-size: 14px; color: #ffffff; }
+</style>

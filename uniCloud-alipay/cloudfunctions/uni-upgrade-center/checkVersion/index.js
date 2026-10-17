@@ -1,0 +1,282 @@
+'use strict';
+
+const platform_Android = 'Android';
+const platform_iOS = 'iOS';
+const platform_Harmony = 'Harmony';
+const package_app = 'native_app';
+const package_wgt = 'wgt';
+const app_version_db_name = 'opendb-app-versions';
+const default_update_prompt_content = '应用已更新，是否立即重启？';
+
+module.exports = async (event, context) => {
+  /**
+   * 检测升级 使用说明
+   * 上传包：
+   * 1. 根据传参，先检测传参是否完整，appid appVersion wgtVersion 必传
+   * 2. 先从数据库取出所有该平台（从上下文读取平台信息，默认 Andriod）的所有线上发行更新
+   * 3. 再从所有线上发行更新中取出版本最大的一版。如果可以，尽量先检测wgt的线上发行版更新
+   * 4. 使用上步取出的版本包的版本号 和传参 appVersion、wgtVersion 来检测是否有更新，必须同时大于这两项，否则返回暂无更新
+   * 5. 如果库中 wgt包 版本大于传参 appVersion，但是不满足 min_uni_version < appVersion，则不会使用wgt更新，会接着判断库中 app包version 是否大于 appVersion
+   * 6. is_uniapp_x 为了区分 App 类型；is_vapor 表示客户端是否为 vapor 模式应用（客户端编译期条件编译确定，无运行时判断 API）
+   *    wgt 记录按 is_vapor 标记与客户端能力匹配（见 isWgtUsable）：
+   *    - Vapor 应用：仅可热更新 vapor 标记（is_vapor===true）的 wgt（.zst/.wgt）
+   *    - 其他客户端：不能安装 vapor wgt（.zst/.wgt）；vdom 的 uni-app x Android 不支持 wgt 热更新（历史行为）
+   */
+
+  let { appid, appVersion, wgtVersion, is_uniapp_x = false, is_vapor = false } = event;
+
+  let platform = platform_Android;
+
+  // 云函数URL化请求
+  if (event.headers) {
+    let body;
+    try {
+      if ((event.httpMethod || '').toLowerCase() === 'get') {
+        body = event.queryStringParameters || {};
+      } else {
+        body = JSON.parse(event.body);
+      }
+      // JSON.parse('null') 等解析结果不是对象时统一按请求错误处理
+      if (body == null || typeof body !== 'object') {
+        throw new Error('invalid body');
+      }
+    } catch (e) {
+      return {
+        code: -102,
+        message: '请求错误',
+      };
+    }
+
+    appid = body.appid;
+    appVersion = body.appVersion;
+    wgtVersion = body.wgtVersion;
+    is_uniapp_x = body.is_uniapp_x === true || body.is_uniapp_x === 'true';
+    is_vapor = body.is_vapor === true || body.is_vapor === 'true';
+
+    // HTTP 头字段名大小写不敏感，遍历 headers 兼容 user-agent / User-Agent / USER-AGENT 等写法
+    let userAgent = '';
+    for (const key of Object.keys(event.headers)) {
+      if (key.toLowerCase() === 'user-agent') {
+        userAgent = String(event.headers[key] || '');
+        break;
+      }
+    }
+
+    if (/iPhone|iPad/.test(userAgent)) {
+      platform = platform_iOS;
+    } else if (/Android|android/.test(userAgent)) {
+      platform = platform_Android;
+    } else {
+      platform = platform_Harmony;
+    }
+  } else if (context.OS) {
+    platform = context.OS === 'android' ? platform_Android : context.OS === 'ios' ? platform_iOS : context.OS === 'harmonyos' ? platform_Harmony : platform_Android;
+  }
+
+  if (appid && appVersion && wgtVersion && platform) {
+    const collection = uniCloud.database().collection(app_version_db_name);
+
+    const record = await collection
+      .where({
+        appid,
+        platform,
+        stable_publish: true,
+      })
+      .orderBy('create_date', 'desc')
+      .get();
+
+    if (record && record.data && record.data.length > 0) {
+      const appVersionInDb = record.data.find((item) => item.type === package_app) || {};
+      const wgtVersionInDb = record.data.find((item) => item.type === package_wgt) || {};
+      const hasAppPackage = !!Object.keys(appVersionInDb).length;
+      const hasWgtPackage = !!Object.keys(wgtVersionInDb).length;
+
+      // 历史记录缺失新字段时补齐兼容默认值；原 is_mandatory 保持不变。
+      if (hasAppPackage) {
+        applyUpdatePromptDefaults(appVersionInDb);
+        appVersionInDb.min_required_version = typeof appVersionInDb.min_required_version === 'string' ?
+          appVersionInDb.min_required_version : '';
+        appVersionInDb.effective_is_mandatory = getEffectiveMandatory(appVersionInDb, appVersion);
+      }
+      if (hasWgtPackage) {
+        applyUpdatePromptDefaults(wgtVersionInDb);
+        wgtVersionInDb.effective_is_mandatory = wgtVersionInDb.is_mandatory === true;
+      }
+
+      // 组装当前客户端可用的候选包（顺序固定：先整包后 wgt）：整包始终可用；wgt 需客户端能力与 Vapor 标记匹配（见 isWgtUsable）
+      const candidates = [];
+      if (hasAppPackage) candidates.push(appVersionInDb);
+      if (hasWgtPackage && isWgtUsable(wgtVersionInDb, is_vapor, is_uniapp_x, platform)) {
+        candidates.push(wgtVersionInDb);
+      }
+      // 候选至多两项：只有一项时直接使用；两项时版本号大者优先，版本相同时优先使用 wgt（可热更新）
+      let stablePublishDb = {};
+      const appHasRequiredUpdate = hasAppPackage && appVersionInDb.effective_is_mandatory === true &&
+        compare(appVersionInDb.version, appVersion) === 1;
+      if (appHasRequiredUpdate) {
+        // 有整包最低强制版本要求时，不能被更高版本的 WGT 绕过。
+        stablePublishDb = appVersionInDb;
+      } else if (candidates.length === 1) {
+        stablePublishDb = candidates[0];
+      } else if (candidates.length === 2) {
+        const appPkg = candidates[0];
+        const wgtPkg = candidates[1];
+        stablePublishDb = compare(wgtPkg.version, appPkg.version) >= 0 ? wgtPkg : appPkg;
+      }
+
+      if (Object.keys(stablePublishDb).length) {
+        const { version, min_uni_version } = stablePublishDb;
+
+        // 库中的version必须满足同时大于appVersion和wgtVersion才行，因为上次更新可能是wgt更新
+        const appUpdate = compare(version, appVersion) === 1; // app包可用更新
+        const wgtUpdate = compare(version, wgtVersion) === 1; // wgt包可用更新
+
+         // appHasRequiredUpdate 时已强制选中整包，不能被“已安装更高版本 wgt”挡掉
+         if (appUpdate && (wgtUpdate || appHasRequiredUpdate)) {
+           // 整包存在最低强制版本要求时，不能被更高版本号的 WGT 绕过。
+           if (stablePublishDb.type === package_wgt && hasAppPackage && isAppUpgradeRequired(appVersion, appVersionInDb)) {
+             if (compare(appVersionInDb.version, appVersion) === 1) {
+               const shaError = getApkSha256Error(appVersionInDb, is_uniapp_x);
+               if (shaError) return shaError;
+               return {
+                 code: 102,
+                 message: '整包更新',
+                 ...appVersionInDb,
+                 effective_is_mandatory: true,
+               };
+             }
+           }
+           // 判断是否可用wgt更新（确保命中记录是 wgt 且满足最低原生版本要求）
+          if (stablePublishDb.type === package_wgt && min_uni_version && compare(min_uni_version, appVersion) < 1) {
+            return {
+              code: 101,
+              message: 'wgt更新',
+              ...stablePublishDb,
+            };
+           } else if (hasAppPackage && compare(appVersionInDb.version, appVersion) === 1) {
+             const shaError = getApkSha256Error(appVersionInDb, is_uniapp_x);
+             if (shaError) return shaError;
+             return {
+               code: 102,
+               message: '整包更新',
+               ...appVersionInDb,
+               effective_is_mandatory: isAppUpgradeRequired(appVersion, appVersionInDb),
+             };
+          }
+        }
+      }
+
+      return {
+        code: 0,
+        message: '当前版本已经是最新的，不需要更新',
+      };
+    }
+
+    return {
+      code: -101,
+      message: '暂无更新',
+    };
+  }
+
+  return {
+    code: -102,
+    message: '请检查传参是否填写正确',
+  };
+};
+
+/**
+ * 对比版本号，如需要，请自行修改判断规则
+ * 支持比对	("3.0.0.0.0.1.0.1", "3.0.0.0.0.1")	("3.0.0.1", "3.0")	("3.1.1", "3.1.1.1") 之类的
+ * @param {Object} v1
+ * @param {Object} v2
+ * v1 > v2 return 1
+ * v1 < v2 return -1
+ * v1 == v2 return 0
+ */
+function compare(v1 = '0', v2 = '0') {
+  v1 = String(v1).split('.');
+  v2 = String(v2).split('.');
+  const minVersionLens = Math.min(v1.length, v2.length);
+
+  let result = 0;
+  for (let i = 0; i < minVersionLens; i++) {
+    const curV1 = Number(v1[i]);
+    const curV2 = Number(v2[i]);
+
+    if (curV1 > curV2) {
+      result = 1;
+      break;
+    } else if (curV1 < curV2) {
+      result = -1;
+      break;
+    }
+  }
+
+  if (result === 0 && v1.length !== v2.length) {
+    const v1BiggerThenv2 = v1.length > v2.length;
+    const maxLensVersion = v1BiggerThenv2 ? v1 : v2;
+    for (let i = minVersionLens; i < maxLensVersion.length; i++) {
+      const curVersion = Number(maxLensVersion[i]);
+      if (curVersion > 0) {
+        v1BiggerThenv2 ? (result = 1) : (result = -1);
+        break;
+      }
+    }
+  }
+
+  return result;
+}
+
+function isAppUpgradeRequired(currentVersion, appPackage) {
+  if (appPackage.is_mandatory === true) return true;
+  const minRequiredVersion = String(appPackage.min_required_version || '').trim();
+  if (!minRequiredVersion || !isValidVersion(minRequiredVersion)) return false;
+  return compare(currentVersion, minRequiredVersion) < 0;
+}
+
+function applyUpdatePromptDefaults(versionPackage) {
+  versionPackage.is_update_prompt = versionPackage.is_update_prompt === true;
+  versionPackage.update_prompt = versionPackage.update_prompt === 'toast' ? 'toast' : 'modal';
+  if (versionPackage.type === package_app) versionPackage.update_prompt = 'modal';
+  versionPackage.update_prompt_content = typeof versionPackage.update_prompt_content === 'string' ?
+    versionPackage.update_prompt_content : default_update_prompt_content;
+}
+
+/**
+ * 判断库中的 wgt 包能否参与当前客户端的版本竞选（保守策略：除 Vapor 新能力外，所有存量场景与历史行为完全一致）
+ * - Vapor 应用（is_vapor=true，客户端编译期条件编译上报）：仅可热更新 vapor 标记（is_vapor=true）的 wgt（.zst/.wgt）
+ * - 非 Vapor 客户端：不能安装 vapor wgt（.zst/.wgt）；其中 vdom 的 uni-app x Android 不支持 wgt 热更新（历史行为）
+ * 注：存量记录 Vapor 标记字段为驼峰 isVapor（已废弃），读取时一并兼容，写入一律使用 is_vapor
+ */
+function isWgtUsable(wgtVersionInDb, is_vapor, is_uniapp_x, platform) {
+  const recordIsVapor = wgtVersionInDb.is_vapor === true || wgtVersionInDb.isVapor === true;
+  if (is_vapor === true) return recordIsVapor;
+  if (recordIsVapor) return false;
+  return !(is_uniapp_x === true && platform === platform_Android);
+}
+
+/**
+ * uni-app x 客户端对 APK 开启校验（verify_sha256=true）但记录缺少 SHA256 时拦截，
+ * 避免客户端安装未经校验的安装包；uni1 无运行时校验能力，忽略该开关与校验结果。
+ */
+function getApkSha256Error(pkg, is_uniapp_x) {
+  if (is_uniapp_x !== true || pkg.type !== package_app || pkg.verify_sha256 !== true) return null;
+  const sha256 = typeof pkg.sha256 === 'string' ? pkg.sha256.trim() : '';
+  if (sha256.length === 0) return { code: -103, message: '安装包校验失败，sha256 为空' };
+  // 非 64 位 hex 属发布配置错误，避免客户端校验永远失败
+  if (!/^[0-9a-fA-F]{64}$/.test(sha256)) return { code: -103, message: '安装包校验失败' };
+  return null;
+}
+
+function isValidVersion(version) {
+  return typeof version === 'string' && /^\d+(\.\d+)*$/.test(version);
+}
+
+function getEffectiveMandatory(appPackage, currentAppVersion) {
+  const minRequiredVersion = appPackage.min_required_version;
+  const hasValidMinimum = appPackage.type === package_app &&
+    isValidVersion(minRequiredVersion) && isValidVersion(appPackage.version) &&
+    isValidVersion(currentAppVersion) && compare(minRequiredVersion, appPackage.version) <= 0;
+  return appPackage.is_mandatory === true ||
+    (hasValidMinimum && compare(currentAppVersion, minRequiredVersion) < 0);
+}

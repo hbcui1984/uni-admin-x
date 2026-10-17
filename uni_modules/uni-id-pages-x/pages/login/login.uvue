@@ -1,0 +1,168 @@
+<template>
+  <view class="account-page">
+    <!-- 顶部文字 -->
+    <!-- <text class="title">请选择登录方式{{data.loginType}}--isAgree:{{pendingAgreements}}</text> -->
+
+    <!--  应用图标 -->
+    <view class="account-brand">
+      <image class="account-logo" :src="logo" mode="aspectFit"></image>
+      <text class="account-brand-name">uni-admin-x</text>
+    </view>
+
+    <!-- 第三方账号登录 -->
+    <view class="big-login-box" v-if="isOauthLogin">
+      <text class="tip">将根据第三方账号服务平台的授权范围获取你的信息</text>
+      <image v-if="imgSrc.length > 0" @click="login" :src="imgSrc" mode="widthFix" class="big-login-img">
+      </image>
+      <button v-else type="primary" @click="login" class="uni-btn">{{ oauthLoginButtonText }}</button>
+      <!-- 同意隐私政策协议 -->
+      <uni-id-pages-x-agreements class="agreements-box" ref="agreementsRef" scope="login" />
+    </view>
+
+    <!-- 微信账号手机号 登录 -->
+    <view v-if="data.loginType == 'weixinMobile'">
+      <text class="tip">将根据第三方账号服务平台的授权范围获取你的信息</text>
+      <button type="primary" open-type="getmobileNumber" @getmobilenumber="login"
+        class="uni-btn">微信授权手机号登录</button>
+      <!-- 同意隐私政策协议 -->
+      <uni-id-pages-x-agreements class="agreements-box" scope="login" />
+    </view>
+
+    <!-- 密码登录 -->
+    <uni-id-pages-x-loginByPwd class="login-content" v-if="data.loginType == 'username'" />
+
+    <!-- 手机号验证码登录 -->
+    <view v-if="data.loginType == 'smsCode'" class="login-type-content">
+      <uni-id-pages-x-loginBySmsCode />
+    </view>
+
+    <!-- 固定定位的快捷登录按钮 -->
+    <uni-id-pages-x-fab-login :currentLoginType="data.loginType"
+      @changeLoginType="changeLoginType"></uni-id-pages-x-fab-login>
+
+  </view>
+</template>
+
+<script setup lang="uts">
+  import { state } from '@/uni_modules/uni-id-pages-x/store.uts';
+  import config from '@/uni_modules/uni-id-pages-x/config.uts';
+  import { normalizeAccountRoute } from '../../common/account-route';
+  import { getOAuthLoginButtonText, getOAuthLoginLargeLogo, isOAuthLoginType, loginByOAuth } from '@/uni_modules/uni-id-pages-x/common/oauth.uts';
+
+  type PageData = {
+    loginType : string
+  }
+  const data = reactive({
+    loginType: "username"
+  } as PageData)
+  const logo = "/static/logo.png"
+  const agreementsRef = ref<UniIdPagesXAgreementsComponentPublicInstance | null>(null)
+
+  const imgSrc = computed(() : string => {
+    return getOAuthLoginLargeLogo(data.loginType)
+  })
+
+  const isOauthLogin = computed(() : boolean => {
+    return isOAuthLoginType(data.loginType)
+  })
+
+  const oauthLoginButtonText = computed(() : string => {
+    return getOAuthLoginButtonText(data.loginType)
+  })
+
+  const pendingAgreements = computed(() : boolean => {
+    return state.pendingAgreements
+  })
+
+  function login() {
+    if (isOAuthLoginType(data.loginType)) {
+      loginByCurrentOAuth()
+      return
+    }
+    // console.log("login", data.loginType)
+  }
+
+  function loginByCurrentOAuth() {
+    const loginType = data.loginType
+    if (state.pendingAgreements) {
+      showPopupAgreements(() => {
+        loginByOAuth(loginType)
+      })
+      return
+    }
+    loginByOAuth(loginType)
+  }
+
+  function showPopupAgreements(callback : () => void) {
+    const agreements = agreementsRef.value
+    if (agreements != null) {
+      agreements.showPopupAgreements(() => {
+        if (!state.pendingAgreements) {
+          callback()
+        }
+      })
+      return
+    }
+
+    nextTick(() => {
+      const nextAgreements = agreementsRef.value
+      if (nextAgreements != null) {
+        nextAgreements.showPopupAgreements(() => {
+          if (!state.pendingAgreements) {
+            callback()
+          }
+        })
+        return
+      }
+      console.error("uni-id-pages-x agreements component is not ready")
+    })
+  }
+
+  function changeLoginType(type : string) {
+    data.loginType = type
+    if (isOAuthLoginType(type)) {
+      nextTick(() => {
+        loginByCurrentOAuth()
+      })
+    }
+  }
+
+  onLoad((query : OnLoadOptions) => {
+    normalizeAccountRoute(query)
+    const type = query["type"]
+    // 如果传递了参数就按参数指定的登录方式，否则指定为 config 中配置的第一项
+    const loginTypes = config.getArray<string>("loginTypes")!
+    if (type != null && loginTypes.includes(type)) {
+      data.loginType = type
+    } else {
+      data.loginType = loginTypes[0]
+    }
+  })
+
+</script>
+
+<style lang="scss" scoped>
+@import url("/uni_modules/uni-id-pages-x/common/common.scss");
+@import url("/uni_modules/uni-id-pages-x/common/account.scss");
+
+.login-content {
+  width: 100%;
+  max-width: 400px;
+}
+
+.agreements-box {
+  justify-content: center;
+}
+
+.big-login-img {
+  margin: 10px 0;
+  height: 38px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.login-type-content {
+  width: 100%;
+  max-width: 400px;
+}
+</style>

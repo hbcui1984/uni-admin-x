@@ -1,0 +1,61 @@
+<script setup>
+	import uniIdInit from '@/uni_modules/uni-id-pages-x/init.uts'
+	import { state as account, mutations } from '@/uni_modules/uni-id-pages-x/store.uts'
+	import store from '@/store/index.js'
+	import { clearAdminNavigation } from '@/common/admin-navigation'
+	// #ifdef APP-ANDROID || APP-HARMONY
+	let firstBackTime = 0
+	// #endif
+
+	onLaunch(() => {
+		void uniIdInit()
+		if (account.isLogin) mutations.updateUserInfo(null)
+		uni.$on('uni-id-pages-x-logout', () => clearAdminNavigation(store))
+	})
+
+	onAppShow(() => {
+		if (!uniCloud.config || (uniCloud.getCurrentUserInfo()?.tokenExpired || 0) <= Date.now()) {
+			account.isLogin = false
+			clearAdminNavigation(store)
+		}
+	})
+
+	onAppHide(() => {
+	})
+
+	// #ifdef APP-ANDROID || APP-HARMONY
+	onLastPageBackPress(() => {
+		console.log('App LastPageBackPress')
+		if (firstBackTime == 0) {
+			uni.showToast({
+				title: '再按一次退出应用',
+				position: 'bottom',
+			})
+			firstBackTime = Date.now()
+			setTimeout(() => {
+				firstBackTime = 0
+			}, 2000)
+		} else if (Date.now() - firstBackTime < 2000) {
+			firstBackTime = Date.now()
+			uni.exit()
+		}
+	})
+
+	onExit(() => {
+		console.log('App Exit')
+	})
+	// #endif
+</script>
+
+<style>
+	@import '@/common/admin.css';
+	@import '@/common/admin-icons.css';
+	/*每个页面公共css */
+	.uni-row {
+		flex-direction: row;
+	}
+
+	.uni-column {
+		flex-direction: column;
+	}
+</style>

@@ -1,0 +1,779 @@
+<template>
+	<view class="uni-container">
+		<view class="uni-header">
+			<view class="uni-group">
+				<view class="uni-title">包类型</view>
+				<view class="uni-sub-title" style="display: flex;justify-content: center;align-items: center;">
+					{{type_valuetotext[formData.type]}}
+				</view>
+			</view>
+			<view v-if="!isStable" class="uni-group">
+				<button class="uni-button delete-version" type="warn" size="mini" @click="deletePackage">删除</button>
+			</view>
+		</view>
+		<uni-forms ref="form" :value="formData" validateTrigger="bind" :labelWidth="labelWidth">
+			<!-- region 基础信息 -->
+			<uni-forms-item name="appid" label="AppID" required>
+				<uni-easyinput :disabled="true" v-model="formData.appid" trim="both" />
+			</uni-forms-item>
+			<uni-forms-item name="name" label="应用名称">
+				<uni-easyinput :disabled="true" v-model="formData.name" trim="both" />
+			</uni-forms-item>
+			<uni-forms-item name="title" label="更新标题">
+				<uni-easyinput :disabled="detailsState" placeholder="更新标题" v-model="formData.title" />
+			</uni-forms-item>
+			<uni-forms-item v-if="isWGT || isNativeApp" name="is_update_prompt" :label="isNativeApp ? '安装提醒' : '更新提醒'">
+				<switch :disabled="detailsState || (isNativeApp && !isAndroid)" @change="onUpdatePromptChange" :checked="formData.is_update_prompt" />
+				<show-info :content="updatePromptContent"></show-info>
+				<text v-if="isNativeApp && !isAndroid" style="color:#666;font-size:12px;">仅 Android 可用</text>
+			</uni-forms-item>
+			<uni-forms-item v-if="isWGT && formData.is_update_prompt" name="update_prompt" label="提醒方式">
+				<uni-data-checkbox :disabled="detailsState" v-model="formData.update_prompt" :localdata="updatePromptLocaldata" />
+			</uni-forms-item>
+			<uni-forms-item v-if="formData.is_update_prompt && (isNativeApp || formData.update_prompt === 'modal')" name="update_prompt_content" label="提醒内容">
+				<view style="display:flex;flex-direction:column;flex:1;">
+					<textarea auto-height style="box-sizing: content-box;" :maxlength="-1" :disabled="detailsState" :placeholder="isNativeApp ? '安装包已下载，是否立即安装？' : '应用已更新，是否立即重启？'"
+						@input="binddata('update_prompt_content', $event.detail.value)" class="uni-textarea-border"
+						:value="formData.update_prompt_content" @update:value="val => formData.update_prompt_content = val"></textarea>
+					<text style="color:#666;font-size:12px;margin-top:6px;">{{updatePromptModalContent}}</text>
+				</view>
+			</uni-forms-item>
+			<uni-forms-item name="contents" label="更新内容" required>
+				<textarea auto-height style="box-sizing: content-box;" :disabled="detailsState"
+					@input="binddata('contents', $event.detail.value)" class="uni-textarea-border" placeholder="更新内容 (可换行)"
+					:value="formData.contents" @update:value="val => formData.contents = val"></textarea>
+			</uni-forms-item>
+      <uni-forms-item v-if="isWGT" key="is_vapor" name="is_vapor" label="蒸汽模式">
+		<!-- 发布后不允许修改蒸汽模式标记，避免与已发布资源包及其 SHA256 不匹配 -->
+      	<switch :disabled="true" :checked="formData.is_vapor" />
+      	<show-info :content="vaporContent"></show-info>
+      </uni-forms-item>
+			<uni-forms-item name="platform" label="平台" required>
+				<!-- 蒸汽模式应用的平台为单选；普通 wgt 支持多选（multiple 为 true 时才会按数组反显） -->
+				<uni-data-checkbox :disabled="true" :multiple="isWGT && !formData.is_vapor" v-model="formData.platform"
+					:localdata="platformLocaldata" />
+			</uni-forms-item>
+			<uni-forms-item name="version" label="版本号" required>
+				<uni-easyinput :disabled="true" v-model="formData.version" placeholder="当前包版本号，必须大于当前已上线版本号" />
+			</uni-forms-item>
+			<!-- endregion -->
+
+			<uni-forms-item v-if="isWGT" key="min_uni_version" name="min_uni_version" label="原生App最低版本"
+				:required="isWGT">
+				<uni-easyinput :disabled="detailsState" placeholder="原生App最低版本" v-model="formData.min_uni_version" />
+				<show-info :content="minUniVersionContent"></show-info>
+			</uni-forms-item>
+			<uni-forms-item v-if="isNativeApp" key="min_required_version" name="min_required_version" label="最低强制版本">
+				<uni-easyinput :disabled="detailsState" placeholder="不填则仅按强制更新开关判断" v-model="formData.min_required_version" />
+				<show-info :content="minRequiredVersionContent"></show-info>
+			</uni-forms-item>
+
+			<template v-if="enableUploadPackage && !detailsState">
+				<uni-forms-item label="存储选择">
+					<view class="flex">
+						<radio-group @change="e => uniFilePickerProvider = e.detail.value" style="width: 100%;">
+							<view class="flex" style="flex-wrap: nowrap;">
+						上传至：
+								<label>
+									<radio value="unicloud" :checked="uniFilePickerProvider === 'unicloud'"/><text>内置存储</text>
+								</label>
+								<label style="margin-left: 20rpx;">
+									<radio value="extStorage" :checked="uniFilePickerProvider === 'extStorage'"/><text>扩展存储</text>
+								</label>
+							</view>
+						</radio-group>
+						<text class="uni-sub-title" style="margin-top: 10px;font-size: 12px;color: #666;width: 100%;">内置存储是服务空间开通后自带的云存储，不支持自定义域名，不支持阶梯计费</text>
+						<text class="uni-sub-title" style="margin-top: 10px;font-size: 12px;color: #666;">扩展存储支持自定义域名、阶梯计费，越用越便宜、功能更强大</text>
+						<text class="uni-sub-title" style="margin-top: 10px;font-size: 12px;color: #2979ff;cursor: pointer;text-decoration: underline; margin-left: 10px;" @click="toUrl('https://doc.dcloud.net.cn/uniCloud/ext-storage/service.html')">扩展存储开通文档</text>
+					</view>
+				</uni-forms-item>
+
+				<uni-forms-item label="自定义域名" v-if="uniFilePickerProvider === 'extStorage'">
+					<view class="flex" style="flex-direction: column;align-items:flex-start;">
+						<uni-easyinput placeholder="请输入扩展存储自定义域名" v-model="domain" :maxlength="-1" style="width: 550px;"/>
+						<text class="uni-sub-title" style="margin-top: 10px;font-size: 12px;color: #666;">输入扩展存储绑定的域名，在服务空间-云存储-扩展存储页面可查看，如：cdn.example.com</text>
+					</view>
+				</uni-forms-item>
+
+			<uni-forms-item :label="'上传'+fileExtname[0]+'包'">
+				<uni-file-picker v-model="appFileList" :dir="uploadFileDir" :file-extname="fileExtname" :disabled="hasPackage"
+					returnType="object" file-mediatype="all" limit="1" @success="packageUploadSuccess" :provider="uniFilePickerProvider"
+					@delete="packageDelete">
+					<view class="flex">
+						<button type="primary" size="mini" @click="selectFile" style="margin: 0px;">选择文件</button>
+					</view>
+				</uni-file-picker>
+				<text v-if="hasPackage"
+					style="padding-left: 20px;color: #a8a8a8;">{{Number(appFileList.size / 1024 / 1024).toFixed(2)}}M</text>
+			</uni-forms-item>
+		</template>
+
+			<uni-forms-item key="url" name="url" :label="urlLabel" required>
+				<view class="flex" style="flex-direction: column;align-items:flex-start;flex: 1;">
+					<view class="flex" style="width: 100%;">
+						<uni-easyinput :disabled="detailsState" placeholder="下载链接" v-model="formData.url" @input="onPackageUrlInput" :maxlength="-1" />
+						<text style="margin-left: 10px;color: #2979ff;cursor: pointer;text-decoration: underline;" v-if="formData.url" @click="toUrl(formData.url)">测试下载</text>
+					</view>
+					<text style="margin-top: 10px;font-size: 12px;color: #666;" v-if="formData.url && !detailsState">建议点击【测试下载】能正常下载后，再进行发布</text>
+				</view>
+			</uni-forms-item>
+
+			<uni-forms-item v-if="isNativeApp && isAndroid" key="verify_sha256" name="verify_sha256" label="SHA256校验">
+				<!-- 发布后修改开关会改变同版本安装包的校验行为，需重新生成摘要 -->
+				<switch :disabled="detailsState || sha256Loading" @change="onVerifySha256Change" :checked="formData.verify_sha256" />
+				<show-info :content="verifySha256Content"></show-info>
+			</uni-forms-item>
+
+			<uni-forms-item v-if="sha256Status" key="sha256" name="sha256" label="SHA256">
+				<view v-if="sha256Status === 'success'" class="flex" style="align-items: center;width: 100%;">
+					<text class="package-sha256-value" :title="formData.sha256">{{formData.sha256}}</text>
+					<text class="package-sha256-copy" @click="copyPackageSha256">复制</text>
+				</view>
+				<text v-else-if="sha256Status === 'loading'" class="package-sha256-tip">SHA256 计算中，完成后方可提交…</text>
+				<view v-else class="flex" style="align-items: center;width: 100%;">
+					<text class="package-sha256-fail">SHA256 获取失败</text>
+					<text class="package-sha256-copy" @click="regenerateSha256InEdit">重新生成</text>
+				</view>
+			</uni-forms-item>
+
+			<uni-forms-item v-if="isAndroid && !isWGT && formData.store_list.length" label="Android应用市场" key="store_list"
+				name="store_list" labelWidth="120">
+				<view style="flex: 1;">
+					<view v-for="(item,index) in formData.store_list" :key="item.id">
+						<uni-card style="margin: 0px 0px 20px 0px;">
+							<view style="display: flex;">
+								<checkbox-group style="user-select: none;"
+									@change="({detail:{value}}) => {item.enable = !!value.length}">
+									<label class="title_padding">
+										<checkbox :disabled="detailsState" value="scheme" :checked="item.enable" />
+										<text>是否启用</text>
+									</label>
+								</checkbox-group>
+							</view>
+							<uni-forms-item label="商店名称">
+								<uni-easyinput disabled v-model="item.name" trim="both"></uni-easyinput>
+							</uni-forms-item>
+							<uni-forms-item label="Scheme">
+								<uni-easyinput disabled v-model="item.scheme" trim="both"></uni-easyinput>
+							</uni-forms-item>
+							<uni-forms-item label="优先级">
+								<uni-easyinput :disabled="detailsState" v-model="item.priority" type="number">
+								</uni-easyinput>
+								<show-info :content="priorityContent"></show-info>
+							</uni-forms-item>
+						</uni-card>
+					</view>
+				</view>
+			</uni-forms-item>
+
+			<uni-forms-item v-if="isWGT" key="is_silently" name="is_silently" label="静默更新">
+				<switch :disabled="detailsState"
+					@change="onSilentlyChange"
+					:checked="formData.is_silently" />
+				<show-info :content="silentlyContent"></show-info>
+			</uni-forms-item>
+			<uni-forms-item key="is_mandatory" name="is_mandatory" label="强制更新">
+				<switch :disabled="detailsState"
+					@change="onMandatoryChange"
+					:checked="formData.is_mandatory" />
+				<show-info :content="mandatoryContent"></show-info>
+			</uni-forms-item>
+			<uni-forms-item name="stable_publish" label="上线发行">
+			<switch :disabled="detailsState"
+				@change="binddata('stable_publish', $event.detail.value)"
+					:checked="formData.stable_publish" />
+				<show-info v-if="isStable" :content="stablePublishContent"></show-info>
+				<show-info v-else :content="stablePublishContent2"></show-info>
+			</uni-forms-item>
+			<uni-forms-item name="create_date" label="上传时间">
+				<uni-dateformat format="yyyy-MM-dd hh:mm:ss" :date="formData.create_date" :threshold="[0, 0]" />
+			</uni-forms-item>
+			<uni-forms-item v-show="false" name="type" label="安装包类型">
+				<uni-data-checkbox v-model="formData.type" :localdata="formOptions.type_localdata" />
+			</uni-forms-item>
+			<view class="uni-button-group">
+			<button type="primary" class="uni-button" style="width: 100px;" @click="enterEdit"
+				v-if="detailsState">修改</button>
+			<button type="primary" class="uni-button" style="width: 100px;" @click="submit"
+				:disabled="submitting || (needSha256 && sha256Loading)" v-if="!detailsState">提交</button>
+				<button type="warn" class="uni-button" style="width: 100px;" @click="cancelEdit"
+					v-if="!detailsState">取消</button>
+				<button class="uni-button" style="width: 100px;margin-left: 15px;" @click="backPage">返回</button>
+			</view>
+		</uni-forms>
+	</view>
+</template>
+
+<script setup>
+	import {
+		ref,
+		watch,
+		getCurrentInstance
+	} from 'vue';
+	import {
+		onLoad,
+		onUnload
+	} from '@dcloudio/uni-app';
+	import showInfo from '../components/show-info.vue';
+	import {
+		useVersionForm,
+		fields
+	} from '../use-version-form.js';
+	import {
+		deepClone,
+		appVersionListDbName,
+		confirmDeleteVersionRecords,
+		compare
+	} from '../utils.js';
+
+	const {
+		proxy
+	} = getCurrentInstance();
+
+	const db = uniCloud.database();
+	const dbCollectionName = appVersionListDbName;
+
+	const form = ref(null);
+	const {
+		labelWidth,
+		silentlyContent,
+		mandatoryContent,
+		updatePromptContent,
+		updatePromptModalContent,
+		vaporContent,
+		verifySha256Content,
+		stablePublishContent,
+		stablePublishContent2,
+		minUniVersionContent,
+		minRequiredVersionContent,
+		priorityContent,
+		uploadFileDir,
+		type_valuetotext,
+		formOptions,
+		rules,
+		latestStableData,
+		appFileList,
+		sha256Loading,
+		uniFilePickerProvider,
+		domain,
+		sessionUploadedFiles,
+		formData,
+		isWGT,
+		isNativeApp,
+		updatePromptLocaldata,
+		isiOS,
+		isAndroid,
+		hasPackage,
+		fileExtname,
+		platformLocaldata,
+		enableUploadPackage,
+		urlLabel,
+		sha256Status,
+		needSha256,
+		binddata,
+		onPackageUrlInput,
+		changePackageDomain,
+		bindLoadedPackageSha256,
+		capturePackageState,
+		restorePackageState,
+		onSilentlyChange,
+		onUpdatePromptChange,
+		onMandatoryChange,
+		validatePromptFields,
+		validateMinRequiredVersion,
+		regeneratePackageSha256,
+		resetSha256Request,
+		packageUploadSuccess,
+		onVerifySha256Change,
+		packageDelete,
+		ensurePackageSha256,
+		ensurePackageExt,
+		copyPackageSha256,
+		selectFile,
+		toUrl,
+		getCloudStorageConfig,
+		setCloudStorage
+	} = useVersionForm(form);
+
+	const isStable = ref(true); // 是否是线上发行版
+	const originalData = ref({}); // 原始数据，用于恢复状态
+	const originalPackageState = ref(null); // 与原记录一同恢复的摘要来源绑定
+	const detailsState = ref(true) // 查看状态
+	const submitting = ref(false) // 提交进行中：防止离开页面时的兜底标记与提交写库竞态
+
+	let formDataId = ''
+
+	onLoad(async (e) => {
+		let {
+			domain: storageDomain,
+			provider
+		} = getCloudStorageConfig();
+		if (storageDomain) domain.value = storageDomain;
+		if (provider) uniFilePickerProvider.value = provider;
+
+		const id = e.id
+		formDataId = id
+		await getDetail(id)
+		isStable.value = formData.value.stable_publish;
+		latestStableData.value = await getLatestVersion();
+		if (isWGT.value) {
+			rules.min_uni_version.rules.push({
+				"required": true
+			})
+		}
+	});
+
+	onUnload(() => {
+		resetSha256Request()
+		// 兜底：编辑态被直接离开（物理返回/关闭页面等未走确认流程的路径），尽力标记本会话上传的包，
+		// 避免文件无引用且无记录；提交进行中不标记（防与提交写库竞态）；页面已卸载，无法反馈结果，失败不再重试
+		if (!submitting.value && !detailsState.value && sessionUploadedFiles.value.length) {
+			db.collection(dbCollectionName).doc(formDataId).update({
+				obsolete_file_ids: buildObsoleteFileList(originalData.value.obsolete_file_ids)
+			}).catch(() => {});
+		}
+		// 临时处理，后面会再优化
+		setCloudStorage({
+			provider: null
+		});
+	});
+
+	watch(domain, (val) => {
+		setCloudStorage({
+			domain: val
+		});
+		if (!detailsState.value) changePackageDomain(val)
+	}, { flush: 'sync' });
+
+	watch(uniFilePickerProvider, (val) => {
+		setCloudStorage({
+			provider: val
+		});
+	});
+
+	// binddata 即对 formData 字段的直接赋值（原 uni-forms vue3 全局 binddata 亦不触发校验），无需再手动赋值一遍
+
+	/**
+	 * 数据未加载成功（无 appid）时提示并返回 false：记录必填 appid，为空即 getDetail 失败
+	 */
+	function ensureLoaded() {
+		if (formData.value.appid) return true
+		uni.showModal({
+			content: '数据加载失败，请返回后重试',
+			showCancel: false
+		})
+		return false
+	}
+
+	/**
+	 * 提交进行中时禁止放弃修改/删除等操作并返回 false（防与提交写库竞态）
+	 */
+	function ensureNotSubmitting() {
+		if (!submitting.value) return true
+		uni.showModal({
+			content: '正在提交，请稍候',
+			showCancel: false
+		})
+		return false
+	}
+
+	/**
+	 * 进入编辑态：记录未加载成功时禁止编辑，避免空表单提交覆盖原记录、或取消编辑将本地数据清空
+	 */
+	function enterEdit() {
+		if (!ensureLoaded()) return
+		detailsState.value = false
+	}
+
+	/**
+	 * 触发表单提交
+	 */
+	function submit() {
+		uni.showLoading({
+			mask: true
+		})
+		form.value.validate(['store_list']).then((res) => {
+			res.update_prompt = formData.value.update_prompt || 'modal'
+			res.is_update_prompt = formData.value.is_update_prompt === true && (isWGT.value || isAndroid.value)
+			if (isWGT.value && res.is_silently === true) res.is_update_prompt = false
+			if (isNativeApp.value) {
+				res.update_prompt = 'modal'
+				res.is_silently = res.is_update_prompt
+			}
+			res.update_prompt_content = formData.value.update_prompt_content || '应用已更新，是否立即重启？'
+			validatePromptFields(res)
+			validateMinRequiredVersion(res, compare)
+			if (isWGT.value) delete res.min_required_version
+			// 校验本次上传的包后缀与蒸汽模式标记匹配（防止先上传普通 wgt 再勾选蒸汽模式等操作发布坏包）
+			ensurePackageExt()
+			// 需校验 SHA256 的记录必须携带摘要提交（计算中/缺失时抛出异常中断）
+			ensurePackageSha256(res)
+			// 链接必填（上传安装包会自动填充），防止手动清空后提交空链接记录
+			if (!res.url) {
+				uni.showModal({
+					content: '请填写下载链接或上传安装包',
+					showCancel: false
+				})
+				throw new Error('链接未填写')
+			}
+			if (res.store_list) {
+				res.store_list.forEach(item => {
+					item.priority = parseFloat(item.priority)
+				})
+			}
+			submitForm(res)
+		}).catch((errors) => {
+			uni.hideLoading()
+		})
+	}
+
+	async function submitForm(value) {
+		// SHA256 提交校验已在 submit() 中统一执行，此处不再重复，避免 submitting 置位后再抛异常导致页面卡死
+		submitting.value = true
+		// 补充非表单项数据（蒸汽模式标记、安装包SHA256、文件ID与存储域名，蒸汽模式 wgt 或开启校验的 APK 携带 SHA256）
+		value.is_vapor = isWGT.value && formData.value.is_vapor === true
+		// verify_sha256 仅 Android APK 生效（iOS/Harmony 无上传入口）
+		value.verify_sha256 = isNativeApp.value && isAndroid.value && formData.value.verify_sha256 === true
+		value.sha256 = (value.is_vapor || value.verify_sha256) ? (formData.value.sha256 || '') : ''
+		value.file_id = formData.value.file_id || ''
+		value.file_domain = formData.value.file_domain || ''
+		// 本会话产生的废弃文件（被替换的原包、× 移除的新包）随记录更新原子入库，由清理入口统一删除
+		value.obsolete_file_ids = formData.value.obsolete_file_ids || []
+		const collectionDB = db.collection(dbCollectionName)
+		// 使用 clientDB 提交数据
+		collectionDB.doc(formDataId).update(value).then(async (res) => {
+			// 提交成功即会话结束：本会话的废弃标记已随记录入库，
+			// 清空会话记录，防止其后（navigateBack 前的操作窗口内）误触发取消编辑的标记逻辑
+			sessionUploadedFiles.value = []
+			// 如果不是线上发行版，则在设置为上线发行时，需将之前的已上线版设为下线
+			if (!isStable.value && value.stable_publish === true && latestStableData.value) {
+				await collectionDB.doc(latestStableData.value._id).update({
+					stable_publish: false
+				})
+			}
+
+			uni.showToast({
+				title: '修改成功'
+			})
+
+			proxy.getOpenerEventChannel().emit('refreshData')
+			setTimeout(() => uni.navigateBack(), 500)
+		}).catch((err) => {
+			submitting.value = false
+			uni.showModal({
+				content: err.message || '请求服务失败',
+				showCancel: false
+			})
+		}).finally(() => {
+			uni.hideLoading()
+		})
+	}
+
+	/**
+	 * 获取表单数据
+	 * @param {Object} id
+	 */
+	function getDetail(id) {
+		uni.showLoading({
+			mask: true
+		})
+		return db.collection(dbCollectionName)
+			.doc(id)
+			.field(fields)
+			.get()
+			.then((res) => {
+				const data = res.result.data[0]
+				if (data) {
+					if (!data.store_list) data.store_list = []
+					if (data.is_update_prompt === undefined) data.is_update_prompt = false
+					if (data.type === 'wgt' && data.is_silently === true) data.is_update_prompt = false
+					if (data.type === 'native_app' && data.platform.includes('Android')) data.is_update_prompt = data.is_silently === true
+					if (!data.update_prompt) data.update_prompt = 'modal'
+					if (!data.update_prompt_content) data.update_prompt_content = data.type === 'native_app' ? '安装包已下载，是否立即安装？' : '应用已更新，是否立即重启？'
+					if (data.type === 'native_app' && !data.min_required_version) data.min_required_version = ''
+					// 历史记录无校验开关字段，默认关闭
+					if (data.verify_sha256 === undefined) data.verify_sha256 = false
+					// 历史记录无废弃包字段，补齐默认值（后续 push/remove 依赖数组方法）
+					if (!data.obsolete_file_ids) data.obsolete_file_ids = []
+					// 兼容历史数据：蒸汽模式标记字段由驼峰 isVapor 更名为蛇形 is_vapor（提交时写回新字段）
+					if (data.is_vapor === undefined && data.isVapor !== undefined) {
+						data.is_vapor = data.isVapor === true
+					}
+					bindLoadedPackageSha256(data)
+					originalData.value = deepClone(formData.value)
+					originalPackageState.value = capturePackageState()
+				}
+			}).catch((err) => {
+				uni.showModal({
+					content: err.message || '请求服务失败',
+					showCancel: false
+				})
+			}).finally(() => {
+				uni.hideLoading()
+			})
+	}
+
+	function deletePackage() {
+		// 记录未加载成功时禁止删除：待删文件清单来自未加载的数据，会漏删云存储文件
+		if (!ensureLoaded()) return
+		if (!ensureNotSubmitting()) return
+		// #ifdef H5
+		const {
+			top,
+			left,
+			height
+		} = document.querySelector('.uni-button.delete-version').getBoundingClientRect()
+		// #endif
+
+		// 一次交互确认是否同步删除云存储中的安装包
+		// 纳入库中原文件（originalData）与本会话上传过的所有包（含被 × 移除的，其废弃标记仅在本地），两者可能分属不同存储
+		const records = [originalData.value]
+		if (sessionUploadedFiles.value.length) records.push(formData.value)
+		confirmDeleteVersionRecords(records, () => {
+			return new Promise((resolve, reject) => {
+				uni.showLoading({
+					mask: true
+				})
+				db.collection(dbCollectionName).doc(formDataId).remove()
+					.then(() => {
+						// 记录（含废弃标记）已删除，清空会话记录避免 onUnload 兜底向已删记录写入
+						sessionUploadedFiles.value = []
+						uni.showToast({
+							title: '删除成功'
+						})
+						proxy.getOpenerEventChannel().emit('refreshData')
+						setTimeout(() => uni.navigateBack(), 500)
+						resolve()
+					}).catch((err) => {
+						uni.showModal({
+							content: err.message || '请求服务失败',
+							showCancel: false
+						})
+						reject(err)
+					}).finally(() => {
+						uni.hideLoading()
+					})
+			})
+		}
+		// #ifdef H5
+		, { top: top + height, left, width: 200 }
+		// #endif
+		)
+	}
+
+	async function getLatestVersion() {
+		const where = {
+			appid: formData.value.appid,
+			type: formData.value.type,
+			stable_publish: true
+		};
+		if (!isWGT.value) {
+			where.platform = formData.value.platform[0]
+		}
+		try {
+			const latestStableRes = await db.collection(dbCollectionName).where(where).get()
+			return latestStableRes.result.data.find(item => item.platform.toString() === formData.value.platform
+				.toString());
+		} catch (e) {
+			// 查询失败不阻断详情页加载（提交时会经 latestStableData 兜底判断）
+			console.error('获取最新上线版本失败：', e)
+		}
+	}
+
+	function cancelEdit() {
+		if (!ensureNotSubmitting()) return
+		// sessionUploadedFiles 含当前挂着的与已被 × 移除的所有本会话上传包
+		let content = '';
+		!isiOS.value && sessionUploadedFiles.value.length ? content += '\n已上传的新包将标记为废弃，可在版本列表的清理入口统一删除' : '';
+		uni.showModal({
+			title: '取消修改',
+			content,
+			success: res => {
+				if (res.confirm) commitDiscard()
+			}
+		});
+	}
+
+	function backPage() {
+		if (detailsState.value) {
+			uni.navigateBack()
+			return
+		}
+		if (!ensureNotSubmitting()) return
+		// 编辑态返回：放弃当前修改，本会话上传的包标记废弃（与取消编辑一致）
+		uni.showModal({
+			title: '放弃修改',
+			content: (sessionUploadedFiles.value.length ? '已上传的安装包将标记为废弃。' : '') + '返回将放弃当前修改，是否继续？',
+			success: res => {
+				if (res.confirm) commitDiscard(() => uni.navigateBack())
+			}
+		})
+	}
+
+	/**
+	 * 放弃当前修改：本会话上传过包则先标记废弃写库（完成后内部会恢复查看态），否则直接恢复查看态并执行 onDone
+	 * @param {Function} onDone 处理完成后的补充动作（如返回列表）
+	 */
+	function commitDiscard(onDone) {
+		resetSha256Request()
+		if (sessionUploadedFiles.value.length) {
+			return markSessionFilesObsolete(onDone)
+		} else {
+			restoreEditState()
+			onDone && onDone()
+		}
+	}
+
+	/**
+	 * 构造取消编辑时应写库的废弃列表：基准数组 + 本会话上传的所有包（含被 × 移除的；被替换的原包回到引用状态，不在标记之列）
+	 * @param {Array} baseObsolete 基准数组（markSessionFilesObsolete 取服务端最新值，onUnload 兜底取本页原始数据）
+	 */
+	function buildObsoleteFileList(baseObsolete) {
+		const obsolete = (baseObsolete || []).slice()
+		sessionUploadedFiles.value.forEach(file => {
+			if (!obsolete.some(item => item.file_id === file.file_id)) {
+				obsolete.push({
+					file_id: file.file_id,
+					file_domain: file.file_domain || '',
+					obsolete_date: Date.now()
+				})
+			}
+		})
+		return obsolete
+	}
+
+	/**
+	 * 将本会话上传过的包统一标记废弃写库
+	 * 写库前拉取服务端最新废弃列表再合并，避免用本页旧快照整体覆盖期间其他操作新增的废弃项
+	 * 标记为幂等操作：写库失败自动重试一次，仍失败提示用户重试；用户放弃则直接执行 onDone（文件遗留为无引用，需控制台手动清理）
+	 * @param {Function} onDone 标记完成（含用户放弃）后的动作，如取消编辑回到查看态后的补充处理、返回列表等
+	 */
+	function markSessionFilesObsolete(onDone, retried = false) {
+		uni.showLoading({
+			mask: true
+		})
+		return db.collection(dbCollectionName).doc(formDataId).field('obsolete_file_ids').get().then((latestRes) => {
+			const data = latestRes.result.data[0]
+			// 记录已不存在（被并发删除）时退化为本页原始数据，写库将 no-op
+			const latestObsolete = data && data.obsolete_file_ids ? data.obsolete_file_ids : (originalData.value
+				.obsolete_file_ids || [])
+			const obsoleteFileIds = buildObsoleteFileList(latestObsolete)
+			return db.collection(dbCollectionName).doc(formDataId).update({
+				obsolete_file_ids: obsoleteFileIds
+			}).then(() => {
+				// 成功后刷新原快照，下一次编辑提交不能覆盖刚保存或并发新增的废弃项。
+				originalData.value.obsolete_file_ids = deepClone(obsoleteFileIds)
+			})
+		}).then(() => {
+			uni.hideLoading()
+			restoreEditState()
+			// 废弃包统计已变化，通知版本列表刷新
+			proxy.getOpenerEventChannel().emit('refreshData')
+			onDone && onDone()
+		}).catch((err) => {
+			uni.hideLoading()
+			console.error('取消编辑标记废弃包失败：', err)
+			if (!retried) {
+				// 幂等操作，失败自动重试一次
+				markSessionFilesObsolete(onDone, true)
+				return
+			}
+			uni.showModal({
+				title: '废弃包标记失败',
+				content: '本会话上传的包未能标记为废弃。可点击重试（安全幂等）；放弃将遗留无引用的安装包文件，需稍后在云存储控制台手动清理',
+				confirmText: '重试',
+				cancelText: '放弃',
+				success: res => {
+					if (res.confirm) {
+						markSessionFilesObsolete(onDone)
+					} else {
+						restoreEditState()
+						onDone && onDone()
+					}
+				}
+			})
+		})
+	}
+
+	/** 查看态不允许直接重算（结果不会入库），提示先进入编辑 */
+	function regenerateSha256InEdit() {
+		if (detailsState.value) {
+			uni.showToast({
+				icon: 'none',
+				title: '请先点击修改'
+			})
+			return
+		}
+		regeneratePackageSha256()
+	}
+
+	/**
+	 * 恢复查看态：还原入库数据、清空选择器显示与本会话上传记录
+	 */
+	function restoreEditState() {
+		// 取消在途 SHA256 请求，避免旧响应写入已还原查看态的表单
+		resetSha256Request()
+		formData.value = deepClone(originalData.value)
+		restorePackageState(originalPackageState.value || {})
+		appFileList.value = null
+		sessionUploadedFiles.value = []
+		detailsState.value = true
+	}
+</script>
+<style lang="scss">
+  page {
+    height: auto;
+  }
+
+	.show-stable-info {
+		position: absolute;
+		left: 165px;
+		padding: 5px 10px;
+		background-color: #f4f4f5;
+		color: #909399;
+		border-radius: 4px;
+		border: 1px solid #e9e9eb;
+	}
+
+	::v-deep .uni-forms-item__content {
+		display: flex;
+		align-items: center;
+	}
+
+	.package-sha256-value {
+		flex: 1;
+		color: #999;
+		font-size: 12px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.package-sha256-copy {
+		margin-left: 10px;
+		color: #2979ff;
+		cursor: pointer;
+		text-decoration: underline;
+		flex-shrink: 0;
+	}
+
+	.package-sha256-tip {
+		color: #999;
+		font-size: 12px;
+	}
+
+	.package-sha256-fail {
+		color: #f56c6c;
+		font-size: 12px;
+	}
+
+	.uni-button-group {
+		& button {
+			margin-left: 15px;
+		}
+
+		& button:first-child {
+			margin-left: 0px;
+		}
+	}
+</style>

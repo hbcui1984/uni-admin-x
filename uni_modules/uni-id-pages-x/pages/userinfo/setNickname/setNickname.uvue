@@ -1,0 +1,68 @@
+<template>
+  <view class="account-page">
+    <view class="form">
+      <text class="account-title">修改昵称</text>
+      <uni-id-pages-x-input class="my-input" v-model="nickname" title="昵称" placeholder="请输入昵称"
+        :focus="true" :maxlength="25" @confirm="save" />
+      <button class="uni-btn" type="primary" :disabled="submitting || !hasChange" :loading="submitting" @click="save">{{ submitting ? '保存中' : '保存' }}</button>
+      <button class="cancel-button" :disabled="submitting" @click="cancel">取消</button>
+    </view>
+  </view>
+</template>
+
+<script setup lang="uts">
+  import { state } from '@/uni_modules/uni-id-pages-x/store.uts'
+  import { accountErrorMessage } from '@/uni_modules/uni-id-pages-x/common/client-cloud.uts'
+  const nickname = ref('')
+  const savedNickname = ref('')
+  const submitting = ref(false)
+  const hasChange = computed((): boolean => nickname.value.trim().length > 0 && nickname.value.trim() != savedNickname.value)
+
+  function cancel() {
+    if (!submitting.value) uni.navigateBack()
+  }
+
+  async function save() {
+    if (submitting.value) return
+    if (!hasChange.value) {
+      if (nickname.value.trim().length == 0) uni.showToast({ title: '昵称不能为空', icon: 'none' })
+      return
+    }
+    const currentUser = uniCloud.config == null ? null : uniCloud.getCurrentUserInfo()
+    if (currentUser?.uid == null || currentUser.tokenExpired <= Date.now()) {
+      uni.showToast({ title: '登录状态已失效，请重新登录', icon: 'none' })
+      return
+    }
+    const uid = currentUser.uid
+    const value = nickname.value.trim()
+    submitting.value = true
+    uni.showLoading({ title: '保存中', mask: true })
+    let completed = false
+    try {
+      await uniCloud.databaseForJQL().collection('uni-id-users').doc(uid).update({ nickname: value })
+      if (uniCloud.getCurrentUserInfo()?.uid != uid) return
+      savedNickname.value = value
+      state.userInfo['nickname'] = value
+      uni.setStorageSync('uni-id-pages-x-userInfo', state.userInfo)
+      completed = true
+      uni.showToast({ title: '修改成功', icon: 'none' })
+      setTimeout(() => uni.navigateBack(), 700)
+    } catch (error) {
+      uni.showToast({ title: accountErrorMessage(error), icon: 'none' })
+    } finally {
+      uni.hideLoading()
+      submitting.value = completed
+    }
+  }
+
+  onLoad(() => {
+    savedNickname.value = state.userInfo.getString('nickname') ?? ''
+    nickname.value = savedNickname.value
+  })
+</script>
+
+<style scoped>
+  @import url('/uni_modules/uni-id-pages-x/common/common.scss');
+  @import url('/uni_modules/uni-id-pages-x/common/account.scss');
+  .cancel-button { margin: 12px 0 0; width: 100%; height: 44px; line-height: 44px; font-size: 14px; border-radius: 4px; }
+</style>

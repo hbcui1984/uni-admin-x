@@ -1,0 +1,38 @@
+<template>
+  <view v-if="accessReady" class="uni-container">
+    <uni-forms ref="formRef" :modelValue="formData" :rules="rules" validateTrigger="bind">
+      <uni-forms-item name="role_id" label="唯一ID" required>
+        <uni-easyinput placeholder="角色唯一标识，不可修改，不允许重复" v-model="formData.role_id" trim="both"></uni-easyinput>
+      </uni-forms-item>
+      <uni-forms-item name="role_name" label="名称" required>
+        <uni-easyinput placeholder="角色名称" v-model="formData.role_name" trim="both"></uni-easyinput>
+      </uni-forms-item>
+      <uni-forms-item name="permission" label="权限" class="flex-center-x">
+        <uni-data-checkbox
+          :multiple="true"
+          v-model="formData.permission"
+          :localdata="permissionChoices"
+        ></uni-data-checkbox>
+      </uni-forms-item>
+      <uni-forms-item name="comment" label="备注">
+        <uni-easyinput type="textarea" placeholder="备注" v-model="formData.comment" trim="both"></uni-easyinput>
+      </uni-forms-item>
+      <view class="uni-button-group">
+        <button type="primary" class="uni-button" style="width: 100px" :disabled="submitting || !detailReady" :loading="submitting" @click="submit">{{ $t('common.button.submit') }}</button>
+        <navigator open-type="navigateBack" style="margin-left: 15px">
+          <button class="uni-button" style="width: 100px">{{ $t('common.button.back') }}</button>
+        </navigator>
+      </view>
+    </uni-forms>
+  </view>
+</template>
+
+<script setup lang="ts">
+import { useAdminForm } from '@/common/admin-crud';
+const { accessReady, formData, formRef, rules, permissionChoices, submitting, detailReady, submit } = useAdminForm('role', false);
+</script>
+<style>
+  .uni-forms-item__label {
+    width: 90px !important;
+  }
+</style>

@@ -1,0 +1,126 @@
+<template>
+	<page-container :show="popupShow" position="center" :overlay="true"
+		overlay-style="background-color: rgba(0, 0, 0, 0.35);" :custom-style="popupContainerStyle"
+		@clickoverlay="closePopup" @afterleave="closePopup">
+		<view class="dialog-box">
+			<text class="title dialog-box-title">{{ title }}</text>
+			<input class="input dialog-box-input" ref="inputRef" type="text" v-model="value" cursor-spacing="210"
+				:focus="inputFocus" @blur="onBlur" />
+			<view class="btn-group dialog-box-btn-group">
+				<text class="btn dialog-box-btn" @click="cancel">取消</text>
+				<text class="btn confirm dialog-box-btn dialog-box-btn-confirm" @click="confirm">确认</text>
+			</view>
+		</view>
+	</page-container>
+</template>
+
+<script setup lang="uts">
+	let confirmCallBack = (_ : string) : void => {}
+
+	const emit = defineEmits(['confirm', 'cancel'])
+	const popupShow = ref<boolean>(false)
+	const popupContainerStyle = "display: flex; align-items: center; justify-content: center; background-color: transparent;"
+	const inputRef = ref<Element | null>(null)
+	const inputFocus = ref(false)
+	const title = ref("默认标题")
+	const value = ref("")
+
+	function open(param : UTSJSONObject, callback : (value : string) => void) : void {
+		title.value = param.getString("title") as string
+		const currentValue = param.getString("value")
+		if (currentValue != null) {
+			value.value = currentValue
+		}
+		confirmCallBack = callback
+		popupShow.value = true
+		nextTick(() => {
+			focusInput()
+		})
+	}
+
+	function focusInput() {
+		// #ifdef MP
+		inputFocus.value = false
+		nextTick(() => {
+			inputFocus.value = true
+		})
+		// #endif
+		// #ifndef MP
+		inputRef.value!.focus()
+		// #endif
+	}
+
+	function onBlur() {
+		inputFocus.value = false
+	}
+
+	function closePopup() {
+		popupShow.value = false
+	}
+
+	function cancel() {
+		closePopup()
+		value.value = ""
+		emit('cancel')
+	}
+
+	function confirm() {
+		if (value.value.length > 0) {
+			emit('confirm', value.value)
+			confirmCallBack(value.value)
+			closePopup()
+			value.value = ""
+		} else {
+			uni.showToast({
+				title: '不能为空',
+				icon: 'none'
+			})
+		}
+	}
+
+	defineExpose({
+		open
+	})
+</script>
+
+<style>
+	.dialog-box {
+		background-color: #FFF;
+		width: 600rpx;
+		border-radius: 5px;
+	}
+
+	.dialog-box-title {
+		font-weight: 700;
+		font-size: 16px;
+		text-align: center;
+		margin-top: 15px;
+	}
+
+	.dialog-box-input {
+		border: 1px solid #eee;
+		border-radius: 5px;
+		margin: 10px 20px;
+		height: 38px;
+		padding: 0 30rpx;
+	}
+
+	.dialog-box-btn-group {
+		border-top: 1px solid #eee;
+		flex-direction: row;
+		justify-content: space-around;
+	}
+
+	.dialog-box-btn {
+		flex: 1;
+		text-align: center;
+		color: #666;
+		height: 45px;
+		line-height: 45px;
+	}
+
+	.dialog-box-btn-confirm {
+		color: #115ff7;
+		border-left: solid 1px #eee;
+	}
+</style>

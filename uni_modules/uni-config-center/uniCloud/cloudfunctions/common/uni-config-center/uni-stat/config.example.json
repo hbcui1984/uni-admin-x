@@ -1,0 +1,14 @@
+{
+  "debug": false,
+  "redis": false,
+  "realtimeStat": false,
+  "cronMin": false,
+  "pageDetailStat": false,
+  "cron": [],
+  "errorCheck": {
+    "needCheck": false
+  },
+  "cleanLog": {
+    "open": false
+  }
+}

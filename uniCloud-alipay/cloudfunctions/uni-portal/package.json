@@ -1,0 +1,11 @@
+{
+    "name": "uni-portal",
+    "dependencies": {},
+    "extensions": {
+        "uni-cloud-jql": {}
+    },
+    "origin-plugin-dev-name": "uni-template-admin",
+    "origin-plugin-version": "3.0.2",
+    "plugin-dev-name": "uni-template-admin",
+    "plugin-version": "3.0.2"
+}

@@ -1,0 +1,8 @@
+{
+  "passwordSecret": "",
+  "tokenSecret": "",
+  "tokenExpiresIn": 7200,
+  "tokenExpiresThreshold": 600,
+  "passwordErrorLimit": 6,
+  "passwordErrorRetryTime": 3600
+}

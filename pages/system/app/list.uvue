@@ -1,0 +1,125 @@
+<template>
+  <view v-if="accessReady" class="fix-top-window">
+    <view class="uni-header">
+      <uni-stat-breadcrumb class="uni-stat-breadcrumb-on-phone" />
+      <view class="uni-group">
+        <input class="uni-search" type="text" v-model="query" @confirm="search" :placeholder="$t('common.placeholder.query')" />
+        <button class="uni-button hide-on-phone" type="default" size="mini" @click="search">{{ $t('common.button.search') }}</button>
+        <button class="uni-button" type="primary" size="mini" @click="unavailable('应用新增')">{{ $t('common.button.add') }}</button>
+        <button class="uni-button" type="warn" size="mini" :disabled="!selectedIndexs.length" @click="delTable">{{ $t('common.button.batchDelete') }}</button>
+      </view>
+    </view>
+    <view class="uni-container">
+      <unicloud-db
+        ref="udbRef"
+        collection="opendb-app-list"
+        field="appid,app_type,name,description,remark,create_date"
+        :where="where"
+        page-data="replace"
+        :orderby="orderby"
+        :getcount="true"
+        :page-size="options.pageSize"
+        :page-current="options.pageCurrent"
+        v-slot:default="{ data, pagination, loading, error }"
+        :options="options"
+        loadtime="manual"
+        @load="onqueryload"
+      >
+        <uni-table
+          ref="tableRef"
+          :loading="loading"
+          :emptyText="(error?.message || error?.errMsg) || $t('common.empty')"
+          border
+          stripe
+          type="selection"
+          @selection-change="selectionChange"
+          class="table-pc"
+        >
+          <uni-tr>
+            <uni-th align="center" filter-type="search" @filter-change="filterChange($event, 'appid')" sortable @sort-change="sortChange($event, 'appid')">AppID</uni-th>
+            <uni-th
+              align="center"
+              filter-type="select"
+              :filter-data="appTypeData"
+              @filter-change="filterChange($event, 'app_type')"
+              sortable
+              @sort-change="sortChange($event, 'app_type')"
+              >应用类型</uni-th
+            >
+            <uni-th align="center" filter-type="search" @filter-change="filterChange($event, 'name')" sortable @sort-change="sortChange($event, 'name')">应用名称</uni-th>
+            <uni-th
+              align="center"
+              filter-type="search"
+              @filter-change="filterChange($event, 'description')"
+              sortable
+              @sort-change="sortChange($event, 'description')"
+              width="380"
+              >应用描述
+            </uni-th>
+            <uni-th align="center">应用备注</uni-th>
+            <uni-th align="center" filter-type="timestamp" @filter-change="filterChange($event, 'create_date')" sortable @sort-change="sortChange($event, 'create_date')"
+              >创建时间</uni-th
+            >
+            <uni-th align="center" width="400">操作</uni-th>
+          </uni-tr>
+          <uni-tr v-for="(item, index) in data" :key="index" :disabled="item.appid === appid">
+            <uni-td align="center">{{ item.appid }}</uni-td>
+            <uni-td align="center">{{ getAppType(item.app_type) }}</uni-td>
+            <uni-td align="center">{{ item.name }}</uni-td>
+            <uni-td align="left"
+              ><text>{{ item.description || '-' }}</text></uni-td
+            >
+            <uni-td align="left"
+              ><text>{{ item.remark || '-' }}</text></uni-td
+            >
+            <uni-td align="center">
+              <uni-dateformat :threshold="[0, 0]" :date="item.create_date"></uni-dateformat>
+            </uni-td>
+            <uni-td align="center">
+              <!-- <view v-if="item.appid === appid">
+								-
+							</view> -->
+              <view class="uni-group">
+                <button @click="unavailable('应用发布')" class="uni-button" size="mini" type="primary">{{ $t('common.button.publish') }}</button>
+                <button @click="unavailable('版本管理')" class="uni-button" size="mini" type="primary">
+                  {{ $t('common.button.version') }}
+                </button>
+                <button @click="unavailable('应用编辑')" class="uni-button" size="mini" type="primary">{{ $t('common.button.edit') }}</button>
+                <button @click="confirmDelete(item._id)" class="uni-button" size="mini" type="warn">{{ $t('common.button.delete') }}</button>
+              </view>
+            </uni-td>
+          </uni-tr>
+        </uni-table>
+
+        <view class="uni-pagination-box">
+          <uni-pagination
+            show-icon
+            show-page-size
+            :page-size="pagination.size"
+            v-model="pagination.current"
+            :total="pagination.count"
+            @change="onPageChanged"
+            @pageSizeChange="pageSizeChange"
+          />
+        </view>
+      </unicloud-db>
+    </view>
+
+    <!-- #ifndef H5 -->
+    <fix-window />
+    <!-- #endif -->
+  </view>
+</template>
+<script setup lang="ts">
+import { computed } from 'vue';
+import { useStore } from 'vuex';
+import { useAdminList } from '@/common/admin-crud';
+const store = useStore();
+const appid = computed(() => store.state.app.appid);
+const appTypeData = [{ text: 'uni-app', value: 0 }, { text: 'uni-app x', value: 1 }];
+const getAppType = (value = 0) => ['uni-app', 'uni-app x'][value] || '未知类型';
+const unavailable = (feature: string) => uni.showToast({ title: feature + '暂未接入', icon: 'none' });
+const { accessReady, query, where, orderby, options, udbRef, tableRef, selectedIndexs, onqueryload, search, changeSize: pageSizeChange, onPageChanged, selectionChange, delTable, confirmDelete, sortChange, filterChange } = useAdminList('app');
+</script>
+
+<style></style>

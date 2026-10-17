@@ -1,0 +1,216 @@
+<template>
+	<page-container :show="isOpen" position="center" :overlay="true"
+		overlay-style="background-color: rgba(0, 0, 0, 0.35);" :custom-style="popupContainerStyle"
+		@afterleave="hide">
+		<view class="sms-code-content">
+			<text class="sms-code-title">{{ title }}</text>
+			<text class="sms-code-tip">短信验证码已发送至{{ mobile }}</text>
+			<view class="code-input-list">
+				<template v-for="(item,i) in smsCodeList" :key="i">
+					<input @input="setSmsCode(i,$event as InputEvent)" :value="item" type="number" ref="codeInputRef"
+						class="code-input code-input-list-item" :maxlength="6" :focus="isOpen && focusIndex == i" @focus="onFocus(i)" />
+				</template>
+			</view>
+			<view class="fab-sms-code-input-foot">
+				<text class="close fab-sms-code-input-close" @click="clear();hide();">关闭</text>
+				<text @click="reGetSmsCode" :class="reverseNumber == 0 ? 'get-sms-code-tip-active' : 'get-sms-code-tip'">{{ reGetSmsCodeTip }}</text>
+			</view>
+		</view>
+	</page-container>
+</template>
+
+<script setup lang="uts">
+	const emit = defineEmits(['update:modelValue', 'blur', 'focus', 'reGetSmsCode'])
+	const props = defineProps({
+		title: {
+			type: String,
+			default: "请输入验证码"
+		},
+		mobile: {
+			type: String,
+			default: ""
+		},
+		modelValue: {
+			type: String,
+			default: ""
+		},
+		reverseNumber: {
+			type: Number,
+			default: 0
+		}
+	})
+
+	const popupContainerStyle = "display: flex; align-items: center; justify-content: center; background-color: transparent;"
+	const codeInputRef = ref<Element[] | null>(null)
+	// 旧方案曾用 "\u200b" 作为每一格的占位值，方便在空格子里维持光标位置。
+	// 但在 uni-app x Android 下，type="number" 的 input 搭配非数字占位字符会导致
+	// 弹窗打开后焦点被冲掉，且手动点击也可能无法重新输入，因此改为空字符串方案。
+	// const smsCodeList = ref(["\u200b", "\u200b", "\u200b", "\u200b", "\u200b", "\u200b"])
+	const smsCodeList = ref(["", "", "", "", "", ""])
+	const isOpen = ref(false)
+	const focusIndex = ref(-1)
+
+	const title = computed(() : string => {
+		return props.title
+	})
+
+	const mobile = computed(() : string => {
+		return props.mobile
+	})
+
+	const reverseNumber = computed(() : number => {
+		return props.reverseNumber
+	})
+
+	const reGetSmsCodeTip = computed(() : string => {
+		if (props.reverseNumber == 0) {
+			return "重新获取"
+		}
+		return "重新发送" + '(' + props.reverseNumber + 's)'
+	})
+
+	const smsCode = computed(() : string => {
+		return smsCodeList.value.join("")
+	})
+
+	function show() {
+		focusIndex.value = 0
+		isOpen.value = true
+		setTimeout(() => {
+			focusIndex.value = -1
+			nextTick(() => {
+				focusIndex.value = 0
+			})
+		}, 120)
+	}
+
+	function hide() {
+		focusIndex.value = -1
+		isOpen.value = false
+	}
+
+	function clear() {
+		// 旧方案：smsCodeList.value = ["\u200b", "\u200b", "\u200b", "\u200b", "\u200b", "\u200b"]
+		smsCodeList.value = ["", "", "", "", "", ""]
+		if (isOpen.value) {
+			focusIndex.value = 0
+		}
+	}
+
+	function setSmsCode(i : number, e : InputEvent) {
+		const value = e.detail.value
+		let currentValue = value
+		if (currentValue.length == 6) {
+			currentValue.split('').forEach((item : string, index : number) => {
+				smsCodeList.value[index] = item
+			})
+			focusIndex.value = smsCodeList.value.length - 1
+			return
+		}
+
+		if (value.length > 1) {
+			nextTick(() => {
+				const newValue = value.slice(value.length - 1)
+				smsCodeList.value[i] = newValue
+			})
+		}
+
+		if (value.length == 0) {
+			smsCodeList.value[i] = ""
+			if (i != 0) {
+				focusIndex.value = i - 1
+				smsCodeList.value[i - 1] = ""
+			}
+		} else {
+			smsCodeList.value[i] = value
+			if (i != (smsCodeList.value.length - 1)) {
+				focusIndex.value = i + 1
+			}
+		}
+	}
+
+	function onFocus(i : number) {
+		focusIndex.value = i
+	}
+
+	function reGetSmsCode() {
+		emit('reGetSmsCode')
+	}
+
+	watch(smsCode, (value : string) => {
+		emit('update:modelValue', value)
+	})
+
+	defineExpose({
+		show,
+		hide,
+		clear
+	})
+</script>
+
+<style lang="scss" scoped>
+	.sms-code-content {
+		background-color: #FFF;
+		width: 550rpx;
+		justify-content: center;
+		align-items: center;
+		padding: 15px 20px;
+		border-radius: 5px;
+	}
+
+	.sms-code-title,
+	.sms-code-tip {
+		text-align: left;
+		padding-left: 20px;
+		width: 550rpx;
+	}
+
+	.sms-code-tip {
+		color: #555;
+		font-weight: 400;
+		font-size: 12px;
+		margin-top: 5px;
+	}
+
+	.code-input-list {
+		flex-direction: row;
+	}
+
+	.code-input-list-item {
+		width: 30px;
+		height: 30px;
+		border: 1px solid #eee;
+		border-radius: 5px;
+		margin: 10px 5px;
+		text-align: center;
+	}
+
+	.fab-sms-code-input-foot {
+		margin-top: 5px;
+		margin-left: 300rpx;
+		position: relative;
+		left: -15px;
+		width: 250rpx;
+		flex-direction: row;
+		justify-content: flex-end;
+	}
+
+	.fab-sms-code-input-close {
+		width: 80rpx;
+		font-size: 12px;
+		color: #888;
+		text-align: center;
+		margin-right: 26rpx;
+	}
+
+	.get-sms-code-tip,
+	.get-sms-code-tip-active {
+		font-size: 12px;
+		text-align: right;
+		color: #AAA;
+	}
+
+	.get-sms-code-tip-active {
+		color: #005eca;
+	}
+</style>

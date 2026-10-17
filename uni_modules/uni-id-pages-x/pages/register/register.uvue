@@ -1,0 +1,253 @@
+<template>
+	<view class="account-page">
+		<view class="account-brand">
+			<image class="account-logo" src="/static/logo.png" mode="aspectFit" />
+			<text class="account-brand-name">uni-admin-x</text>
+		</view>
+		<view class="form">
+			<text class="account-title">注册账号</text>
+			<view class="item">
+				<text class="required">*</text>
+				<uni-id-pages-x-input class="my-input" title="用户名" placeholder="3~20位小写字母和数字" v-model="data.username"
+					ref="usernameRef" @confirm="registerBefore"></uni-id-pages-x-input>
+			</view>
+			<view class="item">
+				<uni-id-pages-x-input class="my-input" title="昵称" placeholder="昵称（可选，3~20位）"
+					v-model="data.nickname" ref="nicknameRef" @confirm="registerBefore"></uni-id-pages-x-input>
+			</view>
+			<view class="item">
+				<text class="required">*</text>
+				<uni-id-pages-x-input class="my-input" title="设置密码" placeholder="请设置密码" v-model="data.password"
+					:password="true" ref="passwordRef" @confirm="registerBefore"></uni-id-pages-x-input>
+			</view>
+			<view class="item">
+				<text class="required">*</text>
+				<uni-id-pages-x-input class="my-input" title="重复密码" placeholder="请重新输入密码" v-model="data.password2" :password="true"
+					ref="password2Ref" @confirm="registerBefore"></uni-id-pages-x-input>
+			</view>
+			<view class="item mt">
+				<uni-captcha v-if="captchaReady" ref="captchaRef" scene="register" v-model="data.captcha" />
+				<text v-else class="account-note">{{ captchaError }}</text>
+			</view>
+
+			<uni-id-pages-x-agreements class="agreements-box" ref="agreementsRef" scope="register" />
+
+			<button class="uni-btn" @click="registerBefore" type="primary" :loading="submitting" :disabled="submitting || data.username.trim().length == 0 || data.password.length == 0 || data.password2.length == 0 || data.captcha.length != 4">{{ submitting ? '注册中' : '注册并登录' }}</button>
+			<text class="account-link" @click="toLogin">返回登录</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { loginSuccess, checkPassword, getAccountRedirect } from '@/uni_modules/uni-id-pages-x/common/common.uts';
+	import { getAccountCloudObject, accountErrorMessage } from '@/uni_modules/uni-id-pages-x/common/client-cloud.uts';
+	import { state } from '@/uni_modules/uni-id-pages-x/store.uts';
+	import { normalizeAccountRoute, accountRouteUrl, accountLoginPath } from '../../common/account-route';
+	onLoad((query : OnLoadOptions) => { normalizeAccountRoute(query) })
+
+	const usernameRef = ref<UniIdPagesXInputComponentPublicInstance | null>(null)
+	const nicknameRef = ref<UniIdPagesXInputComponentPublicInstance | null>(null)
+	const passwordRef = ref<UniIdPagesXInputComponentPublicInstance | null>(null)
+	const password2Ref = ref<UniIdPagesXInputComponentPublicInstance | null>(null)
+	const captchaRef = ref<UniCaptchaComponentPublicInstance | null>(null)
+	const agreementsRef = ref<UniIdPagesXAgreementsComponentPublicInstance | null>(null)
+	const submitting = ref(false)
+	const completed = ref(false)
+	const captchaReady = ref(false)
+	const captchaError = ref('验证码服务检查中')
+	onMounted(() => {
+		try {
+			getAccountCloudObject('uni-captcha-co')
+			captchaReady.value = true
+		} catch (error) {
+			captchaError.value = accountErrorMessage(error)
+		}
+	})
+	function toLogin() {
+		if (submitting.value) return
+		uni.redirectTo({ url: accountRouteUrl(accountLoginPath, getAccountRedirect()) })
+	}
+	const data = reactive({
+		username: "",
+		nickname: "",
+		password: "",
+		password2: "",
+		captcha: ""
+	})
+
+	function showPopupCaptcha(callback : () => void) {
+		agreementsRef.value!.showPopupAgreements(callback)
+	}
+
+	function registerBefore() {
+		if (submitting.value) return
+		if (!captchaReady.value) {
+			uni.showToast({ title: captchaError.value, icon: 'none' })
+			return
+		}
+		data.username = data.username.trim()
+		const myForm : UTSJSONObject = {
+			username: data.username,
+			password: data.password,
+			password2: data.password2,
+			captcha: data.captcha
+		}
+		const inputRefs : UTSJSONObject = {
+			username: usernameRef.value,
+			password: passwordRef.value,
+			password2: password2Ref.value,
+			nickname: nicknameRef.value
+		}
+		const requiredFields = [
+			["username", "用户名"],
+			["password", "密码"],
+			["password2", "确认密码"],
+			["captcha", "验证码"]
+		] as string[][]
+
+		for (const item of requiredFields) {
+			const key = item[0] as string
+			const errMsg = (item[1] as string) + "不能为空"
+			if (myForm.get(key) == "") {
+				const inputRef = inputRefs.getAny(key) as UniIdPagesXInputComponentPublicInstance | null
+				if (inputRef != null) inputRef.setFocus(true)
+				else captchaRef.value?.setFocus(true)
+				uni.showToast({
+					title: errMsg,
+					icon: "none",
+					duration: 3000
+				})
+				return
+			}
+		}
+
+		const usernameRegExp = new RegExp("^(?=.*[a-z])(?=.*\\d)[a-z\\d]{3,20}$")
+		if (!usernameRegExp.test(data.username)) {
+			usernameRef.value!.setFocus(true)
+			return uni.showModal({
+				content: "用户名由数字和小写字母的3-20个字符组成",
+				showCancel: false,
+				confirmText: "知道了"
+			})
+		}
+
+		if (data.nickname.length > 0) {
+			const nicknameRegExp = new RegExp("^[\u4e00-\u9fa5a-z0-9]{3,20}$")
+			if (!nicknameRegExp.test(data.nickname)) {
+				nicknameRef.value!.setFocus(true)
+				return uni.showModal({
+					content: "昵称由小写字母、数字、中文组成的3-20位字符串",
+					showCancel: false,
+					confirmText: "知道了"
+				})
+			}
+		}
+
+		const checkPasswordRes = checkPassword(data.password)
+		const isPass = checkPasswordRes.getBoolean("pass") == true
+		if (!isPass) {
+			const errMsg = checkPasswordRes.getString("errMsg")
+			return uni.showModal({
+				content: errMsg,
+				showCancel: false,
+				confirmText: "知道了",
+				complete() {
+					passwordRef.value!.setFocus(true)
+				}
+			})
+		}
+
+		if (data.password != data.password2) {
+			return uni.showModal({
+				content: "两次输入的密码不一致",
+				showCancel: false,
+				confirmText: "知道了",
+				complete() {
+					password2Ref.value!.setFocus(true)
+				}
+			})
+		}
+
+		if (data.captcha.length != 4) {
+			return uni.showModal({
+				content: "请输入验证码",
+				showCancel: false,
+				confirmText: "知道了",
+				complete() {
+					captchaRef.value!.setFocus(true)
+				}
+			})
+		}
+
+		if (state.pendingAgreements) {
+			showPopupCaptcha(() => {
+				if (!state.pendingAgreements) {
+					registerBefore()
+				}
+			})
+			return
+		}
+
+		register()
+	}
+
+	async function register() {
+		if (submitting.value) return
+		submitting.value = true
+		const payload : UTSJSONObject = {
+			"username": data.username,
+			"nickname": data.nickname,
+			"password": data.password,
+			"password2": data.password2,
+			"captcha": data.captcha
+		}
+		uni.showLoading({ "title": "请求中" })
+
+		try {
+			const uniIdCo = getAccountCloudObject('uni-id-co')
+			const e = await uniIdCo.registerUser(payload)
+			loginSuccess(e)
+			completed.value = true
+		} catch (err) {
+				const error = err as UniCloudError
+				console.error(error)
+				if (error?.code == 'uni-captcha-verify-fail' || error?.errCode == 'uni-captcha-verify-fail') {
+					captchaRef.value?.getImageCaptcha(true)
+				}
+				uni.showToast({
+					title: accountErrorMessage(err),
+					icon: 'none'
+				})
+		} finally {
+			submitting.value = completed.value
+			uni.hideLoading()
+		}
+	}
+</script>
+
+<style lang="scss" scoped>
+	@import url("/uni_modules/uni-id-pages-x/common/common.scss");
+	@import url("/uni_modules/uni-id-pages-x/common/account.scss");
+
+	.form {
+		padding-left: 15px;
+	}
+
+	.item {
+		margin-top: 8px;
+		position: relative;
+		padding-left: 15px;
+		margin-left: -15px;
+	}
+
+	.mt {
+		margin-top: 16px;
+	}
+
+	.required {
+		position: absolute;
+		color: red;
+		left: 0px;
+		top: 15px;
+	}
+</style>

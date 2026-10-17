@@ -1,0 +1,144 @@
+<template>
+	<view class="account-page">
+		<view class="account-brand">
+			<image class="account-logo" src="/static/logo.png" mode="aspectFit" />
+			<text class="account-brand-name">uni-admin-x</text>
+		</view>
+		<view v-if="!smsEnabled" class="form">
+			<text class="account-title">找回密码</text>
+			<text class="account-note">当前未开通短信找回，请联系系统管理员重置后台账号密码。</text>
+			<button class="uni-btn" type="primary" @click="toLogin">返回登录</button>
+		</view>
+		<view v-else class="form">
+			<text class="account-title">重置密码</text>
+			<!-- 获取验证码组件（输入手机号码+发送短信验证码所需的图形验证码，获得短信验证码） -->
+			<uni-id-pages-x-smsCode scene="reset-pwd-by-sms" ref="smsCodeRef" @input="smsCodeInput"
+				:autoSend="false"></uni-id-pages-x-smsCode>
+			<uni-id-pages-x-input class="my-input" :border="false" v-model="data.password" placeholder="请输入新密码" ref="passwordRef"
+				:password="true" @confirm="doNext"></uni-id-pages-x-input>
+			<uni-id-pages-x-input class="my-input" :border="false" v-model="data.password2" placeholder="请再次输入密码" ref="password2Ref"
+				:password="true" @confirm="doNext"></uni-id-pages-x-input>
+			<button class="uni-btn" type="primary" :loading="submitting" :disabled="submitting || data.password.length == 0 || data.password2.length == 0" @click="doNext">{{ submitting ? '重置中' : '下一步' }}</button>
+		</view>
+
+		<!-- 多次重置输入错误时，需要额外输入图形验证码 （悬浮） -->
+		<uni-popup-captcha v-if="smsEnabled" ref="captchaRef" scene="reset-pwd-by-sms" v-model="data.captcha" title="请输入验证码"></uni-popup-captcha>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { checkPassword } from '@/uni_modules/uni-id-pages-x/common/common.uts';
+	import config from '@/uni_modules/uni-id-pages-x/config.uts';
+	import { getAccountCloudObject, accountErrorMessage } from '@/uni_modules/uni-id-pages-x/common/client-cloud.uts';
+	const smsEnabled = config.getBoolean('smsEnabled') == true
+	const submitting = ref(false)
+	const completed = ref(false)
+	function toLogin() {
+		uni.redirectTo({ url: '/uni_modules/uni-id-pages-x/pages/login/login' })
+	}
+
+	const smsCodeRef = ref<UniIdPagesXSmsCodeComponentPublicInstance | null>(null)
+	const passwordRef = ref<UniIdPagesXInputComponentPublicInstance | null>(null)
+	const password2Ref = ref<UniIdPagesXInputComponentPublicInstance | null>(null)
+	const captchaRef = ref<UniPopupCaptchaComponentPublicInstance | null>(null)
+	const data = reactive({
+		password: '',
+		password2: '',
+		captcha: ''
+	})
+
+	function smsCodeInput(param : UTSJSONObject) {
+		if (!smsEnabled || submitting.value) return
+		const mobile = param.getString("mobile") as string
+		const code = param.getString("code") as string
+		const sendSmsCaptcha = param.getString("sendSmsCaptcha") as string
+		if (sendSmsCaptcha.length == 4 && code.length == 0) {
+			passwordRef.value!.setFocus(true)
+		}
+		if (mobile.length == 11 && code.length == 6) {
+			resetPwdBySms(param)
+		}
+	}
+
+	function doNext() {
+		if (!smsEnabled || submitting.value) return
+		const checkPasswordRes = checkPassword(data.password)
+		const isPass = checkPasswordRes.getBoolean("pass") == true
+		if (!isPass) {
+			const errMsg = checkPasswordRes.getString("errMsg")
+			return uni.showModal({
+				title: "提示",
+				content: errMsg,
+				showCancel: false,
+				confirmText: "知道了",
+				complete() {
+					passwordRef.value!.setFocus(true)
+				}
+			})
+		}
+
+		if (data.password != data.password2) {
+			return uni.showModal({
+				title: "提示",
+				content: "两次输入的密码不一致",
+				showCancel: false,
+				confirmText: "知道了",
+				complete() {
+					password2Ref.value!.setFocus(true)
+				}
+			})
+		}
+		smsCodeRef.value!.sendSmsCode()
+	}
+
+	async function resetPwdBySms(param : UTSJSONObject) {
+		if (!smsEnabled || submitting.value) return
+		submitting.value = true
+		uni.showLoading({ "title": "请求中" })
+		param.set("password", data.password)
+		param.set("captcha", data.captcha)
+
+		try {
+				const uniIdCo = getAccountCloudObject('uni-id-co')
+				const e = await uniIdCo.resetPwdBySms(param)
+				if (e == null) throw new Error('账号服务未返回重置结果')
+				completed.value = true
+				submitting.value = true
+				smsCodeRef.value!.hideCodeInput()
+				uni.showToast({
+					title: '重置成功',
+					icon: 'none'
+				})
+				setTimeout(() => {
+					uni.navigateBack()
+				}, 1500)
+		} catch (err) {
+				const error = err as UniCloudError
+				console.error(error)
+				uni.showToast({
+					title: accountErrorMessage(err),
+					icon: 'none',
+					duration: 3000
+				})
+		} finally {
+				submitting.value = completed.value
+				uni.hideLoading()
+		}
+	}
+
+	onLoad((query : OnLoadOptions) => {
+		if (!smsEnabled) return
+		const mobile = query["mobile"]
+		if (mobile != null) {
+			nextTick(() => {
+				smsCodeRef.value!.mobile = mobile
+			})
+		}
+	})
+
+</script>
+
+<style lang="scss" scoped>
+	@import url("/uni_modules/uni-id-pages-x/common/common.scss");
+	@import url("/uni_modules/uni-id-pages-x/common/account.scss");
+</style>

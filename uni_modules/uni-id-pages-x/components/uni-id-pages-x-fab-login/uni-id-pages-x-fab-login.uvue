@@ -1,0 +1,180 @@
+<template>
+	<view class="fab-login-box">
+		<template v-for="(item,index) in servicesList" :key="item.id">
+			<view class="item fab-login-item" @click="changeLoginType(index)">
+				<image v-if="item.logo.length > 0" class="logo fab-login-logo" :src="item.logo" mode="scaleToFill"></image>
+				<text v-else class="fab-login-logo fab-login-logo-text">{{ item.text.substring(0, 1) }}</text>
+				<text class="title fab-login-title">{{ item.text }}</text>
+			</view>
+		</template>
+	</view>
+</template>
+<script setup lang="uts">
+	import config from '@/uni_modules/uni-id-pages-x/config.uts';
+	import { getOAuthLoginLogo, getOAuthLoginText, isOAuthLoginType } from '@/uni_modules/uni-id-pages-x/common/oauth.uts';
+
+	type Services = {
+		id : string,
+		text : string,
+		logo : string
+	}
+
+	const emit = defineEmits(['changeLoginType'])
+	const props = defineProps({
+		currentLoginType: {
+			type: String,
+			default: ""
+		}
+	})
+
+	const servicesList = computed(() : Services[] => {
+		const servicesList = [{
+			"id": "username",
+			"text": "账号登录",
+			"logo": "/uni_modules/uni-id-pages-x/static/login/uni-fab-login/user.png"
+		},
+		{
+			"id": "smsCode",
+			"text": "短信验证码",
+			"logo": "/uni_modules/uni-id-pages-x/static/login/uni-fab-login/sms.png"
+		},
+		{
+			"id": "weixin",
+			"text": getOAuthLoginText('weixin'),
+			"logo": getOAuthLoginLogo('weixin')
+		},
+		{
+			"id": "weixinMobile",
+			"text": "微信手机号",
+			"logo": "/uni_modules/uni-id-pages-x/static/login/uni-fab-login/weixin.png"
+		},
+		// #ifdef APP-IOS
+		// #ifndef MP-WEIXIN
+		{
+			"id": "apple",
+			"text": getOAuthLoginText('apple'),
+			"logo": getOAuthLoginLogo('apple')
+		},
+		// #endif
+		// #endif
+		// #ifdef APP-HARMONY
+		// #ifndef MP-WEIXIN
+		{
+			"id": "huawei",
+			"text": getOAuthLoginText('huawei'),
+			"logo": getOAuthLoginLogo('huawei')
+		},
+		// #endif
+		// #endif
+		// #ifndef MP-WEIXIN
+		{
+			"id": "univerify",
+			"text": "一键登录",
+			"logo": "/uni_modules/uni-id-pages-x/static/app-plus/uni-fab-login/univerify.png"
+		},
+		{
+			"id": "taobao",
+			"text": "淘宝登录",
+			"logo": "/uni_modules/uni-id-pages-x/static/app-plus/uni-fab-login/taobao.png"
+		},
+		{
+			"id": "facebook",
+			"text": "脸书登录",
+			"logo": "/uni_modules/uni-id-pages-x/static/app-plus/uni-fab-login/facebook.png"
+		},
+		{
+			"id": "alipay",
+			"text": "支付宝登录",
+			"logo": "/uni_modules/uni-id-pages-x/static/app-plus/uni-fab-login/alipay.png"
+		},
+		{
+			"id": "qq",
+			"text": "QQ登录",
+			"logo": "/uni_modules/uni-id-pages-x/static/app-plus/uni-fab-login/qq.png"
+		},
+		{
+			"id": "google",
+			"text": "谷歌登录",
+			"logo": "/uni_modules/uni-id-pages-x/static/app-plus/uni-fab-login/google.png"
+		},
+		{
+			"id": "douyin",
+			"text": "抖音登录",
+			"logo": "/uni_modules/uni-id-pages-x/static/app-plus/uni-fab-login/douyin.png"
+		},
+		{
+			"id": "sinaweibo",
+			"text": "新浪微博",
+			"logo": "/uni_modules/uni-id-pages-x/static/app-plus/uni-fab-login/sinaweibo.png"
+		}
+		// #endif
+		] as Services[]
+		const loginTypes = config.getArray<string>('loginTypes')
+		return servicesList.filter((item) : boolean => {
+			return item.id != props.currentLoginType && loginTypes!.includes(item.id)
+		})
+	})
+
+	function changeLoginType(index : number) {
+		const id = servicesList.value[index].id
+		if (!["username", "smsCode", "weixinMobile"].includes(id) && !isOAuthLoginType(id)) {
+			return uni.showToast({
+				title: 'uni-app x暂未支持此登录方式',
+				icon: 'none',
+				duration: 3000
+			})
+		}
+
+		emit('changeLoginType', id)
+
+	}
+
+	if (servicesList.value.map((i) : string => i.id).includes('univerify')) {
+	}
+</script>
+
+<style lang="scss" scoped>
+	.fab-login-box {
+		width: 750rpx;
+		position: fixed;
+		bottom: 30px;
+		left: 0;
+		flex-direction: row;
+		flex-wrap: wrap;
+		justify-content: space-around;
+		z-index: 10;
+	}
+
+	.fab-login-item {
+		flex-direction: column;
+		justify-content: center;
+		align-items: center;
+		/* #ifdef WEB */
+		cursor: pointer;
+		/* #endif */
+	}
+
+	.fab-login-logo {
+		width: 30px;
+		height: 30px;
+		border-radius: 100px;
+		border: solid 1px #F6F6F6;
+	}
+
+	.fab-login-logo-text {
+		line-height: 30px;
+		text-align: center;
+		font-size: 15px;
+		font-weight: bold;
+		color: #C8102E;
+	}
+
+	.fab-login-title {
+		text-align: center;
+		color: #999;
+		font-size: 10px;
+		width: 70px;
+		height: 20px;
+		line-height: 20px;
+	}
+</style>

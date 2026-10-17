@@ -1,0 +1,158 @@
+<template>
+  <view v-if="needAgreements" class="agreements-wrapper">
+    <checkbox-group class="agreements-group" @change="setAgree">
+      <view class="agreements-row">
+        <label class="agreement-label">
+          <checkbox class="agreement-checkbox" value="agreement" :checked="state.agreementsAccepted"
+            :disabled="!agreementsReady" aria-label="同意用户服务协议和隐私政策" role="checkbox"
+            :aria-checked="state.agreementsAccepted" :aria-disabled="!agreementsReady" :tabindex="agreementsReady ? 0 : -1"
+            @keydown.space.prevent="toggleAgree" @keydown.enter.prevent="toggleAgree" />
+          <text class="agreement-copy">我已阅读并同意</text>
+        </label>
+        <view class="agreement-links">
+          <template v-for="(agreement, index) in agreements" :key="agreement.title">
+            <text v-if="index > 0" class="agreement-copy agreement-separator">和</text>
+            <text class="agreement-link" :class="{ 'agreement-link-disabled': !agreementsReady }"
+              role="link" tabindex="0" @click.stop="navigateTo(index)"
+              @keydown.enter.prevent="navigateTo(index)">{{ agreement.title }}</text>
+          </template>
+        </view>
+      </view>
+    </checkbox-group>
+    <text v-if="!agreementsReady" class="agreement-notice" role="status">协议内容尚未配置，暂不可勾选或提交</text>
+
+    <page-container :show="popupShow" position="center" :overlay="true"
+      overlay-style="background-color: rgba(0, 0, 0, 0.35);" :custom-style="popupContainerStyle"
+      @clickoverlay="cancel" @afterleave="closePopup">
+      <view class="agreement-dialog" role="dialog" aria-label="阅读并同意协议">
+        <text class="dialog-title">请先阅读并同意协议</text>
+        <view class="dialog-links">
+          <template v-for="(agreement, index) in agreements" :key="agreement.title">
+            <text v-if="index > 0" class="agreement-copy agreement-separator">和</text>
+            <text class="agreement-link" role="link" tabindex="0" @click="navigateTo(index)"
+              @keydown.enter.prevent="navigateTo(index)">{{ agreement.title }}</text>
+          </template>
+        </view>
+        <view class="dialog-actions">
+          <button class="dialog-button" @click="cancel">取消</button>
+          <button class="dialog-button dialog-confirm" type="primary" @click="confirm">同意并继续</button>
+        </view>
+      </view>
+    </page-container>
+  </view>
+</template>
+
+<script setup lang="uts">
+  import config from '@/uni_modules/uni-id-pages-x/config.uts'
+  import { state } from '@/uni_modules/uni-id-pages-x/store.uts'
+
+  type Agreement = { url: string, title: string }
+  const props = defineProps({ scope: { type: String, default: 'login' } })
+  const popupShow = ref(false)
+  const popupContainerStyle = 'display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: transparent;'
+  let confirmCallBack: (() => void) | null = null
+
+  const needAgreements = computed((): boolean => {
+    return config.getArray<string>('agreements.scopeList')?.includes(props.scope) == true
+  })
+  const agreements = computed((): Agreement[] => [
+    { url: config.getString('agreements.serviceUrl') ?? '', title: '《用户服务协议》' },
+    { url: config.getString('agreements.privacyUrl') ?? '', title: '《隐私政策》' }
+  ])
+  const agreementsReady = computed((): boolean => {
+    return agreements.value.every(agreement => /^https?:\/\/[^\s/?#]+(?:[/?#][^\s]*)?$/i.test(agreement.url))
+  })
+
+  watch([needAgreements, agreementsReady], () => {
+    state.agreementsAccepted = false
+  }, { immediate: true })
+  watch([needAgreements, agreementsReady, () => state.agreementsAccepted], () => {
+    state.pendingAgreements = needAgreements.value && (!agreementsReady.value || !state.agreementsAccepted)
+  }, { immediate: true, flush: 'sync' })
+
+  function configurationNotice() {
+    uni.showToast({ title: '协议内容尚未配置，请联系管理员', icon: 'none' })
+  }
+
+  function navigateTo(index: number) {
+    if (!agreementsReady.value) {
+      configurationNotice()
+      return
+    }
+    const agreement = agreements.value[index]
+    if (agreement == null) return
+    uni.navigateTo({
+      url: '/uni_modules/uni-id-pages-x/pages/common/webview/webview?url=' + encodeURIComponent(agreement.url) + '&title=' + encodeURIComponent(agreement.title),
+      fail: () => uni.showToast({ title: '协议页面打开失败，请重试', icon: 'none' })
+    })
+  }
+
+  function setAgree(event: CheckboxGroupChangeEvent) {
+    if (!agreementsReady.value || !needAgreements.value) return
+    state.agreementsAccepted = event.detail.value.includes('agreement')
+  }
+
+  function toggleAgree() {
+    if (agreementsReady.value && needAgreements.value) state.agreementsAccepted = !state.agreementsAccepted
+  }
+
+  function showPopupAgreements(callback: () => void) {
+    if (!needAgreements.value) {
+      callback()
+      return
+    }
+    if (!agreementsReady.value) {
+      configurationNotice()
+      return
+    }
+    if (state.agreementsAccepted) {
+      callback()
+      return
+    }
+    confirmCallBack = callback
+    popupShow.value = true
+  }
+
+  function closePopup() {
+    popupShow.value = false
+    confirmCallBack = null
+  }
+
+  function cancel() {
+    state.agreementsAccepted = false
+    closePopup()
+  }
+
+  function confirm() {
+    if (!popupShow.value || !agreementsReady.value || !needAgreements.value) return
+    const callback = confirmCallBack
+    state.agreementsAccepted = true
+    // 关闭弹窗并清除回调后再提交，避免连续确认造成重复请求。
+    closePopup()
+    callback?.()
+  }
+
+  onUnmounted(closePopup)
+  defineExpose({ showPopupAgreements })
+</script>
+
+<style scoped>
+  .agreements-wrapper { display: flex; flex-direction: column; width: 100%; margin: 8px 0; }
+  .agreements-group { width: 100%; }
+  .agreements-row { display: flex; flex-direction: row; align-items: flex-start; flex-wrap: wrap; }
+  .agreement-label { display: flex; flex-direction: row; align-items: center; min-height: 32px; flex-shrink: 0; cursor: pointer; }
+  .agreement-checkbox { flex-shrink: 0; margin-right: 5px; }
+  .agreement-copy { font-size: 12px; line-height: 32px; color: #606266; }
+  .agreement-links { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; min-height: 32px; }
+  .agreement-link { font-size: 12px; line-height: 32px; color: #2979ff; cursor: pointer; }
+  .agreement-link-disabled { color: #909399; }
+  .agreement-separator { margin: 0 2px; }
+  .agreement-notice { margin-top: 2px; font-size: 12px; line-height: 20px; color: #856321; }
+  .agreement-dialog { display: flex; flex-direction: column; width: 320px; padding: 20px; box-sizing: border-box; background-color: #ffffff; border-radius: 8px; }
+  .dialog-title { font-size: 16px; line-height: 24px; font-weight: 600; color: #303133; }
+  .dialog-links { display: flex; flex-direction: row; flex-wrap: wrap; margin: 12px 0 20px; }
+  .dialog-actions { display: flex; flex-direction: row; justify-content: flex-end; }
+  .dialog-button { height: 36px; margin: 0 0 0 10px; padding: 0 12px; line-height: 36px; font-size: 14px; border-radius: 4px; }
+  .dialog-confirm { min-width: 112px; }
+  @media screen and (max-width: 360px) { .agreement-dialog { width: 280px; } }
+</style>

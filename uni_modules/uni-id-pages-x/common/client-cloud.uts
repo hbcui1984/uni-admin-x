@@ -1,0 +1,15 @@
+export function getAccountCloudObject(name : string) {
+	// 没有当前用户不代表没有云空间，登录前只检查云对象自身是否可用。
+	if (uniCloud.config == null) {
+		throw new Error('账号服务未就绪，请先绑定 uniCloud 云空间并部署官方账号服务')
+	}
+	const cloudObject = uniCloud.importObject(name, { customUI: true })
+	if (cloudObject == null) {
+		throw new Error('账号服务未就绪，请先绑定 uniCloud 云空间并部署官方账号服务')
+	}
+	return cloudObject
+}
+
+export function accountErrorMessage(error : any | null) : string {
+	return error?.errMsg ?? error?.message ?? '账号服务请求失败，请检查云空间配置后重试'
+}

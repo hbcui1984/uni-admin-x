@@ -1,0 +1,211 @@
+<template>
+	<view class="uni-content" v-if="accessReady && isLogin">
+		<view class="list">
+			<view class="item">
+				<text class="item-title">头像</text>
+				<uni-id-pages-x-avatar ref="avatar" width="60px" height="60px" :border="false"
+					:readOnly="!isLogin"></uni-id-pages-x-avatar>
+			</view>
+			<view class="item">
+				<text class="item-title">昵称</text>
+				<view @click="setNickname" class="item-content">
+					<text class="item-unset" v-if="!isLogin">未登录</text>
+					<text class="item-value" v-else-if="hasNickname">{{nickname}}</text>
+					<text class="item-unset" v-else>未设置</text>
+					<uni-id-pages-x-icons v-if="isLogin" :size="16" type="right-arrow"
+						class="link-icon"></uni-id-pages-x-icons>
+				</view>
+			</view>
+			<view class="item" v-if="smsEnabled">
+				<text class="item-title">手机号码</text>
+				<view @click="bindmobile" class="item-content">
+					<text class="item-value" v-if="userInfo['mobile'] != null">{{userInfo['mobile']}}</text>
+					<text class="item-unset" v-else>未绑定</text>
+					<uni-id-pages-x-icons :size="16" type="right-arrow" class="link-icon"></uni-id-pages-x-icons>
+				</view>
+			</view>
+		</view>
+		<view class="list">
+			<view @click="deactivate" class="item deactivate-item">
+				<text class="item-title">注销账号</text>
+				<uni-id-pages-x-icons :size="16" type="right-arrow" class="link-icon"></uni-id-pages-x-icons>
+			</view>
+			<view class="item"  v-if="isLogin && showLoginManage" @click="logout">
+				<text class="item-title">退出登录</text>
+				<uni-id-pages-x-icons :size="16" type="right-arrow" class="link-icon"></uni-id-pages-x-icons>
+			</view>
+			<view class="mask" v-if="!isLogin" @click="login"></view>
+		</view>
+		<view class="btn-list" v-if="showLoginManage">
+			<!-- <button v-if="isLogin" @click="logout" class="logout">退出登录</button> -->
+			<button v-if="!isLogin" @click="login" type="primary" class="login">去登录</button>
+		</view>
+		<!-- 弹出对话框组件 -->
+		<uni-id-pages-x-popup-dialog ref="popup-dialog" />
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { state } from '@/uni_modules/uni-id-pages-x/store.uts';
+	import { logout as doLogout } from '@/uni_modules/uni-id-pages-x/common/common.uts';
+	import config from '@/uni_modules/uni-id-pages-x/config.uts';
+	import { rememberAccountAccess, accountRouteUrl, accountLoginPath } from '../../common/account-route';
+	const proxy = getCurrentInstance()?.proxy as any
+	const accessReady = ref(false)
+	let accessTarget = '/uni_modules/uni-id-pages-x/pages/userinfo/userinfo'
+	const smsEnabled = config.getBoolean('smsEnabled') == true
+
+	const showLoginManage = ref(true)
+
+	const userInfo = computed(() : UTSJSONObject => {
+		return state.userInfo
+	})
+
+	const isLogin = computed(() : boolean => {
+		return state.isLogin
+	})
+
+	const nickname = computed(() : string => {
+		const value = userInfo.value.getString('nickname')
+		return value == null ? '' : value
+	})
+
+	const hasNickname = computed(() : boolean => {
+		return nickname.value.trim().length > 0
+	})
+
+	onLoad((options : OnLoadOptions) => {
+		const stack = getCurrentPages()
+		const page = stack[stack.length - 1] as any
+		const query = Object.entries(options).map(([key, value]) => encodeURIComponent(key) + '=' + encodeURIComponent(String(value))).join('&')
+		accessTarget = rememberAccountAccess(proxy?.$route?.fullPath || page?.$page?.fullPath || (accessTarget + (query ? '?' + query : '')))
+		checkAccess()
+		const value = options["showLoginManage"]
+		showLoginManage.value = value == null ? true : value == "true"
+	})
+	onShow(() => { checkAccess() })
+	function checkAccess() {
+		const user = uniCloud.config ? uniCloud.getCurrentUserInfo() : null
+		accessReady.value = user != null && user.uid != null && user.tokenExpired > Date.now()
+		if (!accessReady.value) rememberAccountAccess(accessTarget)
+	}
+
+	function setNickname() {
+		uni.navigateTo({
+			"url": "/uni_modules/uni-id-pages-x/pages/userinfo/setNickname/setNickname"
+		})
+	}
+
+	function bindmobile() {
+		if (!smsEnabled) return
+		uni.navigateTo({
+			url: "/uni_modules/uni-id-pages-x/pages/userinfo/bindMobile/bindMobile",
+			complete(_) {
+				// console.log('e', e);
+			}
+		})
+	}
+
+	function deactivate() {
+		uni.navigateTo({
+			url: "/uni_modules/uni-id-pages-x/pages/userinfo/deactivate/deactivate",
+			complete(_) {
+				// console.log('e', e);
+			}
+		})
+	}
+
+	function logout() {
+		doLogout()
+	}
+
+	function login() {
+		uni.navigateTo({
+			url: accountRouteUrl(accountLoginPath, accessTarget),
+			// complete(e){
+			//   console.log('e',e);
+			// }
+		})
+	}
+</script>
+
+<style>
+	.uni-content {
+		width: 100%;
+		max-width: 720px;
+		align-self: center;
+		padding: 20px;
+		background-color: #f5f5f5;
+		flex: 1;
+	}
+
+	.avatar {
+		border: 1px solid #000;
+		align-items: center;
+	}
+
+	.list {
+		position: relative;
+		background-color: #fff;
+		margin-top: 15px;
+	}
+
+	.mask {
+		position: absolute;
+		width: 100%;
+		height: 100%;
+	}
+
+	.item {
+		display: flex;
+		flex-direction: row;
+		border-bottom: 1px solid #f5f5f5;
+		align-items: center;
+		padding: 15px 15px;
+	}
+
+	.deactivate-item {
+		margin-top: 20px;
+		border-top: 0.1px solid #EEE;
+	}
+
+	.item-title {
+		font-size: 14px;
+		flex: 1;
+		color: #333;
+	}
+
+	.item-content {
+		display: flex;
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.item-value {
+		flex-shrink: 1;
+		max-width: 220px;
+		color: #999;
+		font-size: 12px;
+	}
+
+	.item-unset {
+		color: #aaa;
+		font-size: 12px;
+	}
+
+	.link-icon {
+		margin-left: 5px;
+		width: 13px;
+	}
+
+	.btn-list {
+		margin-top: 30px;
+		padding: 24px 0;
+	}
+
+	.logout {
+		color: #888;
+		border-style: none;
+	}
+</style>

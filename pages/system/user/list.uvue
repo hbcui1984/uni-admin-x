@@ -1,0 +1,135 @@
+<template>
+  <view v-if="accessReady" class="fix-top-window">
+    <view class="uni-header">
+      <uni-stat-breadcrumb class="uni-stat-breadcrumb-on-phone" />
+      <view class="uni-group">
+        <input class="uni-search" type="text" v-model="query" @confirm="search" :placeholder="$t('common.placeholder.query')" />
+        <button class="uni-button hide-on-phone" type="default" size="mini" @click="search">{{ $t('common.button.search') }}</button>
+        <button class="uni-button" type="primary" size="mini" @click="navigateTo('./add')">{{ $t('common.button.add') }}</button>
+        <button class="uni-button" type="warn" size="mini" :disabled="!selectedIndexs.length" @click="delTable">{{ $t('common.button.batchDelete') }}</button>
+        <button class="uni-button" type="primary" size="mini" :disabled="!selectedIndexs.length" @click="openTagsPopup">{{ $t('common.button.tagManager') }}</button>
+        <!-- #ifdef H5 -->
+        <button class="uni-button" type="primary" size="mini" @click="batchSmsRef.open()">{{ $t('common.button.sendSMS') }}</button>
+        <download-excel class="hide-on-phone" :fields="exportExcel.fields" :data="exportExcelData" :type="exportExcel.type" :name="exportExcel.filename">
+          <button class="uni-button" type="primary" size="mini">{{ $t('common.button.exportExcel') }}</button>
+        </download-excel>
+        <!-- #endif -->
+      </view>
+    </view>
+    <view class="uni-container">
+      <unicloud-db
+        ref="udbRef"
+        :collection="collectionList"
+        :where="where"
+        page-data="replace"
+        :orderby="orderby"
+        :getcount="true"
+        :page-size="options.pageSize"
+        :page-current="options.pageCurrent"
+        v-slot:default="{ data, pagination, loading, error }"
+        :options="options"
+        loadtime="manual"
+        @load="onqueryload"
+      >
+        <uni-table ref="tableRef" :loading="loading" :emptyText="(error?.message || error?.errMsg) || $t('common.empty')" border stripe type="selection" @selection-change="selectionChange">
+          <uni-tr>
+            <uni-th align="center" filter-type="search" @filter-change="filterChange($event, 'username')" sortable @sort-change="sortChange($event, 'username')">用户名</uni-th>
+            <uni-th align="center" filter-type="search" @filter-change="filterChange($event, 'nickname')" sortable @sort-change="sortChange($event, 'nickname')">用户昵称</uni-th>
+            <uni-th align="center" filter-type="search" @filter-change="filterChange($event, 'mobile')" sortable @sort-change="sortChange($event, 'mobile')">手机号码</uni-th>
+            <uni-th align="center" filter-type="select" :filter-data="options.filterData.status_localdata" @filter-change="filterChange($event, 'status')">用户状态</uni-th>
+            <uni-th align="center" filter-type="search" @filter-change="filterChange($event, 'email')" sortable @sort-change="sortChange($event, 'email')">邮箱</uni-th>
+            <uni-th align="center">角色</uni-th>
+            <uni-th align="center" filter-type="select" :filter-data="tagsData" @filter-change="filterChange($event, 'tags')">用户标签</uni-th>
+            <uni-th align="center">可登录应用</uni-th>
+            <uni-th align="center" filter-type="timestamp" @filter-change="filterChange($event, 'last_login_date')" sortable @sort-change="sortChange($event, 'last_login_date')"
+              >最后登录时间</uni-th
+            >
+            <uni-th align="center">操作</uni-th>
+          </uni-tr>
+          <uni-tr v-for="(item, index) in data" :key="index">
+            <uni-td align="center">{{ item.username }}</uni-td>
+            <uni-td align="center">{{ item.nickname }}</uni-td>
+            <uni-td align="center">{{ item.mobile }}</uni-td>
+            <uni-td align="center">{{ options.status_valuetotext[item.status] }}</uni-td>
+            <uni-td align="center">
+              <uni-link :href="'mailto:' + item.email" :text="item.email"></uni-link>
+            </uni-td>
+            <uni-td align="center"> {{ item.role }}</uni-td>
+            <uni-td align="center">
+              <block v-for="(tag, tagIndex) in item.tags" :key="tagIndex">
+                <uni-tag type="primary" inverted size="small" :text="tag" v-if="item.tags" style="margin: 0 5px"></uni-tag>
+              </block>
+            </uni-td>
+            <uni-td align="center">
+              <uni-link v-if="item.dcloud_appid === undefined" :href="noAppidWhatShouldIDoLink"> 未绑定可登录应用<view class="uni-icons-help"></view> </uni-link>
+              {{ item.dcloud_appid }}
+            </uni-td>
+            <uni-td align="center">
+              <uni-dateformat :threshold="[0, 0]" :date="item.last_login_date"></uni-dateformat>
+            </uni-td>
+            <uni-td align="center">
+              <view class="uni-group">
+                <button @click="navigateTo('./edit?id=' + item._id, false)" class="uni-button" size="mini" type="primary">{{ $t('common.button.edit') }}</button>
+                <button @click="confirmDelete(item._id)" class="uni-button" size="mini" type="warn">{{ $t('common.button.delete') }}</button>
+              </view>
+            </uni-td>
+          </uni-tr>
+        </uni-table>
+        <view class="uni-pagination-box">
+          <uni-pagination
+            show-icon
+            show-page-size
+            :page-size="pagination.size"
+            v-model="pagination.current"
+            :total="pagination.count"
+            @change="onPageChanged"
+            @pageSizeChange="changeSize"
+          />
+        </view>
+      </unicloud-db>
+    </view>
+    <!-- #ifndef H5 -->
+    <fix-window />
+    <!-- #endif -->
+    <uni-popup ref="tagsPopupRef" type="center">
+      <view class="tags-manager--x">
+        <view class="tags-manager--header mb">管理标签</view>
+        <uni-data-checkbox v-model="managerTags" class="mb ml" :multiple="true" :localdata="tagChoices"></uni-data-checkbox>
+        <view class="uni-group">
+          <button @click="managerMultiTag" class="uni-button" type="primary" style="margin-right: 75px">保存</button>
+        </view>
+      </view>
+    </uni-popup>
+    <!-- #ifdef H5 -->
+    <batch-sms ref="batchSmsRef" toType="user" :receiver="smsReceiver" :condition="smsCondition"></batch-sms>
+    <!-- #endif -->
+  </view>
+</template>
+
+<script setup lang="ts">
+import { useAdminList } from '@/common/admin-crud';
+const { accessReady, query, where, orderby, options, udbRef, tableRef, tagsPopupRef, batchSmsRef, selectedIndexs, collectionList, exportExcel, exportExcelData, managerTags, smsCondition, managerMultiTag, tagChoices, tagsData, smsReceiver, noAppidWhatShouldIDoLink, openTagsPopup, onqueryload, search, changeSize, onPageChanged, selectionChange, navigateTo, delTable, confirmDelete, sortChange, filterChange } = useAdminList('user');
+</script>
+
+<style>
+  .tags-manager--x {
+      width: 400px;
+      padding: 40px 30px;
+      border-radius: 5px;
+      background-color: #fff;
+  }
+
+  .tags-manager--header {
+      font-size: 22px;
+      color: #333;
+      text-align: center;
+  }
+
+  .mb {
+    margin-bottom: 80px;
+  }
+
+  .ml {
+    margin-left: 30px;
+  }
+</style>

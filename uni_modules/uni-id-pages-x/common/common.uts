@@ -1,0 +1,126 @@
+import { state, mutations } from '@/uni_modules/uni-id-pages-x/store.uts';
+import config from '@/uni_modules/uni-id-pages-x/config.uts';
+import { readAccountRedirect, safeAccountRedirect } from './account-route';
+export { safeAccountRedirect } from './account-route';
+import { getAccountCloudObject } from './client-cloud.uts';
+
+const defaultAccountRedirect = '/pages/index/index'
+
+export function getAccountRedirect() : string {
+	const webTarget = readAccountRedirect()
+	if (webTarget != null) return webTarget
+	const stack = getCurrentPages()
+	for (let index = stack.length - 1; index >= 0; index--) {
+		const value = stack[index].options?.['uniIdRedirectUrl'] as string | null
+		if (value != null && value.length > 0) return safeAccountRedirect(value)
+	}
+	return defaultAccountRedirect
+}
+
+export const loginSuccess = (_ : UTSJSONObject) => {
+	const currentUser = uniCloud.getCurrentUserInfo()
+	if (_ == null || currentUser == null || currentUser.uid == null || !(currentUser.tokenExpired > Date.now())) {
+		throw new Error('账号服务未返回有效登录状态，请检查云空间及账号服务配置')
+	}
+	const targetUrl = getAccountRedirect()
+	// console.log('loginSuccess', e);
+	// console.log("新用户uid", e["uid"]);
+	// state.currentUserInfo = uniCloud.getCurrentUserInfo()
+	mutations.updateUserInfo(null)
+	// state.userInfo["_id"] = e["uid"]
+	state.isLogin = true
+	uni.$emit('uni-id-pages-x-login-success', '')
+
+	// 登录后重定向设置
+	function loginAfterToPage() {
+		uni.redirectTo({
+			url: targetUrl,
+			fail() {
+				uni.switchTab({
+					url: targetUrl.split('?')[0],
+					fail() {
+						uni.reLaunch({ url: defaultAccountRedirect })
+					}
+				})
+			}
+		})
+	};
+	const toastDuration = 1500
+	uni.showToast({
+		title: '登录成功',
+		duration: toastDuration,
+		icon: 'none'
+	});
+	// 避免 showToast 还没结束就跳转引起的崩溃
+	setTimeout(() => loginAfterToPage(), toastDuration);
+
+}
+
+export const logout = () => {
+	// 1. 已经过期就不需要调用服务端的注销接口 2. 即使调用注销接口失败，也不能阻塞客户端退出
+	const clearLocalLoginState = () => {
+		uni.removeStorageSync('uni_id_token')
+		uni.setStorageSync('uni_id_token_expired', 0)
+		uni.removeStorageSync('uni-id-pages-x-userInfo')
+		state.userInfo = {}
+		state.isLogin = false
+		uni.$emit('uni-id-pages-x-logout', '')
+	}
+	const redirectToLogin = () => {
+		uni.redirectTo({
+			url: "/uni_modules/uni-id-pages-x/pages/login/login"
+		})
+	}
+
+	try {
+		const currentUser = uniCloud.getCurrentUserInfo()
+		if (currentUser != null && currentUser.tokenExpired > Date.now()) {
+			const uniIdCo = getAccountCloudObject('uni-id-co')
+			// 远端注销为尽力操作；本地退出不等待远端返回。
+			Promise.resolve(uniIdCo.logout())
+				.catch<void>((err : any | null) => {
+					console.warn('uni-id logout failed, continue local logout', err)
+				})
+		}
+	} catch (error) {
+		console.warn('uni-id logout unavailable, continue local logout', error)
+	}
+
+	clearLocalLoginState()
+	redirectToLogin()
+}
+
+export const checkPassword = (password : string) : UTSJSONObject => {
+	// console.log("checkPassword", password);
+	// 根据配置的密码强度校验
+	let passwordStrength = config.getString("passwordStrength")
+	if (passwordStrength == null) {
+		passwordStrength = "weak"
+	}
+	// 密码强度表达式
+	const passwordRules : UTSJSONObject = {
+		"super": {
+			"rule": "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/])[0-9a-zA-Z~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/]{8,16}$",
+			"errMsg": "密码必须包含大小写字母、数字和特殊符号，长度范围：8-16位之间"
+		},
+		"strong": {
+			"rule": "^(?=.*[0-9])(?=.*[a-zA-Z])(?=.*[~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/])[0-9a-zA-Z~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/]{8,16}$",
+			"errMsg": "密密码必须包含字母、数字和特殊符号，长度范围：8-16位之间"
+		},
+		"medium": {
+			"rule": "^(?!.*[0-9]+$)(?!.*[a-zA-Z]+$)(?!.*[~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/]+$)[0-9a-zA-Z~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/]{8,16}$",
+			"errMsg": "密码必须为字母、数字和特殊符号任意两种的组合，长度范围：8-16位之间"
+		},
+		"weak": {
+			"rule": "^(?=.*[0-9])(?=.*[a-zA-Z])[0-9a-zA-Z~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/]{6,16}$",
+			"errMsg": "密码必须包含字母和数字，长度范围：6-16位之间"
+		}
+	}
+	let passwordRule = passwordRules.getString(passwordStrength + '.rule');
+	let passwordRegExp = new RegExp(passwordRule as string);
+	let res : UTSJSONObject = {
+		"pass": passwordRegExp.test(password),
+		"errMsg": passwordRules.getString(passwordStrength + '.errMsg')
+	}
+	return res
+}

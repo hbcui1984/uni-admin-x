@@ -1,0 +1,64 @@
+{
+  "easycom": {
+    "autoscan": true,
+    "custom": { "^cloud-image$": "@/uni_modules/uni-id-pages-x/components/cloud-image/cloud-image.uvue" }
+  },
+  "pages": [
+    { "path": "pages/index/index", "style": { "navigationBarTitleText": "首页" } },
+    { "path": "pages/error/404", "style": { "navigationBarTitleText": "页面不存在" } },
+    { "path": "uni_modules/uni-id-pages-x/pages/login/login", "style": { "navigationBarTitleText": "登录", "topWindow": false, "leftWindow": false } },
+    { "path": "uni_modules/uni-id-pages-x/pages/register/register", "style": { "navigationBarTitleText": "注册", "topWindow": false, "leftWindow": false } },
+    { "path": "uni_modules/uni-id-pages-x/pages/retrieve/retrieve", "style": { "navigationBarTitleText": "找回密码", "topWindow": false, "leftWindow": false } },
+    { "path": "uni_modules/uni-id-pages-x/pages/userinfo/userinfo", "style": { "navigationBarTitleText": "个人资料" } },
+    { "path": "uni_modules/uni-id-pages-x/pages/userinfo/setNickname/setNickname", "style": { "navigationBarTitleText": "修改昵称" } },
+    { "path": "uni_modules/uni-id-pages-x/pages/userinfo/bindMobile/bindMobile", "style": { "navigationBarTitleText": "绑定手机" } },
+    { "path": "uni_modules/uni-id-pages-x/pages/userinfo/deactivate/deactivate", "style": { "navigationBarTitleText": "注销账号" } },
+    { "path": "uni_modules/uni-id-pages-x/pages/userinfo/realnameAuth/realnameAuth", "style": { "navigationBarTitleText": "实名认证" } },
+    { "path": "uni_modules/uni-id-pages-x/pages/common/webview/webview", "style": { "navigationBarTitleText": "", "topWindow": false, "leftWindow": false } }
+  ],
+  "subPackages": [
+    {
+      "root": "pages/system",
+      "pages": [
+        { "path": "menu/list", "style": { "navigationBarTitleText": "菜单管理" } },
+        { "path": "menu/add", "style": { "navigationBarTitleText": "新增菜单" } },
+        { "path": "menu/edit", "style": { "navigationBarTitleText": "修改菜单" } },
+        { "path": "permission/list", "style": { "navigationBarTitleText": "权限管理" } },
+        { "path": "permission/add", "style": { "navigationBarTitleText": "新增权限" } },
+        { "path": "permission/edit", "style": { "navigationBarTitleText": "修改权限" } },
+        { "path": "role/list", "style": { "navigationBarTitleText": "角色管理" } },
+        { "path": "role/add", "style": { "navigationBarTitleText": "新增角色" } },
+        { "path": "role/edit", "style": { "navigationBarTitleText": "修改角色" } },
+        { "path": "user/list", "style": { "navigationBarTitleText": "用户管理" } },
+        { "path": "user/add", "style": { "navigationBarTitleText": "新增用户" } },
+        { "path": "user/edit", "style": { "navigationBarTitleText": "修改用户" } },
+        { "path": "tag/list", "style": { "navigationBarTitleText": "标签管理" } },
+        { "path": "tag/add", "style": { "navigationBarTitleText": "新增标签" } },
+        { "path": "tag/edit", "style": { "navigationBarTitleText": "修改标签" } },
+        { "path": "app/list", "style": { "navigationBarTitleText": "应用列表" } }
+      ]
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "uni-admin-x",
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundColor": "#f5f7fa",
+    "h5": { "titleNView": false }
+  },
+  "topWindow": {
+    "path": "windows/topWindow",
+    "style": { "height": "60px" },
+    "matchMedia": { "minWidth": 0 }
+  },
+  "leftWindow": {
+    "path": "windows/leftWindow",
+    "style": { "width": "240px" },
+    "matchMedia": { "minWidth": 768 }
+  },
+  "uniIdRouter": {
+    "loginPage": "uni_modules/uni-id-pages-x/pages/login/login",
+    "needLogin": ["^pages/system/", "^uni_modules/uni-id-pages-x/pages/userinfo/"],
+    "resToLogin": true
+  }
+}

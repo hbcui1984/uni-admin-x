@@ -1,0 +1,120 @@
+<template>
+  <view class="admin-top">
+    <view class="top-start">
+      <button class="icon-button" title="展开或收起菜单" aria-label="展开或收起菜单" @click="toggleSidebar">
+        <uni-icons type="bars" :size="22" color="#606266" />
+      </button>
+      <view class="brand" @click="navigateAdmin(HOME_URL)">
+        <image class="brand-logo" src="/static/logo.png" mode="aspectFit" />
+        <text class="brand-name">uni-admin-x</text>
+      </view>
+    </view>
+    <text class="top-title">{{ title }}</text>
+    <view class="top-actions">
+      <picker :range="languages" range-key="name" :value="languageIndex" @change="changeLanguage">
+        <view class="language-control" title="选择语言">
+          <uni-icons type="flag" :size="18" color="#606266" />
+          <text class="language-name">{{ languages[languageIndex].name }}</text>
+          <uni-icons type="arrowdown" :size="12" color="#909399" />
+        </view>
+      </picker>
+      <button v-if="!navigation.loggedIn" class="account-button" @click="login"><text class="account-text">登录</text></button>
+      <picker v-else :range="accountActions" @change="selectAccountAction">
+        <view class="account-control" title="账号菜单">
+          <uni-icons type="person" :size="20" color="#606266" />
+          <text class="account-name">{{ username }}</text>
+          <uni-icons type="arrowdown" :size="12" color="#909399" />
+        </view>
+      </picker>
+    </view>
+  </view>
+</template>
+
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import { useStore } from 'vuex'
+import { useI18n } from 'vue-i18n'
+import uniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.vue'
+import { state as account } from '@/uni_modules/uni-id-pages-x/store.uts'
+import { logout } from '@/uni_modules/uni-id-pages-x/common/common.uts'
+import { HOME_URL, LOGIN_URL, PROFILE_URL, clearAdminNavigation, navigateAdmin, useAdminNavigation } from '@/common/admin-navigation'
+
+const props = defineProps({
+  navigationBarTitleText: { type: String, default: '' },
+  matchLeftWindow: { type: Boolean, default: false },
+  showLeftWindow: { type: Boolean, default: false }
+})
+const store = useStore()
+const { navigation } = useAdminNavigation(store)
+const { locale } = useI18n({ useScope: 'global' })
+const languages = [{ name: '简体中文', value: 'zh-Hans' }, { name: '繁體中文', value: 'zh-Hant' }, { name: 'English', value: 'en' }]
+const languageIndex = ref(Math.max(0, languages.findIndex(item => item.value === uni.getLocale())))
+const accountActions = ['个人资料', '退出登录']
+const username = computed(() => {
+  const info = account.userInfo
+  return info.nickname || info.username || info.mobile || info.email || '当前用户'
+})
+const title = computed(() => {
+  const routes = store.state.app.routes || []
+  return routes.length ? routes[routes.length - 1].name : props.navigationBarTitleText
+})
+function toggleSidebar() {
+  if (props.showLeftWindow) uni.hideLeftWindow()
+  else uni.showLeftWindow()
+}
+function changeLanguage(event: any) {
+  const index = Number(event.detail.value)
+  const language = languages[index]
+  if (!language) return
+  languageIndex.value = index
+  locale.value = language.value
+  uni.setLocale(language.value)
+}
+function login() { uni.reLaunch({ url: LOGIN_URL }) }
+function selectAccountAction(event: any) {
+  if (Number(event.detail.value) === 0) {
+    uni.navigateTo({ url: PROFILE_URL, fail: () => uni.showToast({ title: '个人资料页面尚未注册', icon: 'none' }) })
+    return
+  }
+  uni.showModal({
+    title: '退出登录', content: '确定退出当前账号？',
+    success: result => {
+      if (!result.confirm) return
+      clearAdminNavigation(store)
+      account.isLogin = false
+      logout()
+    }
+  })
+}
+</script>
+
+<style scoped>
+.admin-top { display: flex; flex-direction: row; align-items: center; width: 100%; height: 60px; padding: 0 20px 0 12px; background-color: #ffffff; border-bottom: 1px solid #e4e7ed; }
+.top-start { display: flex; flex-direction: row; align-items: center; flex-shrink: 0; }
+.icon-button { display: flex; flex-direction: row; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; margin: 0 10px 0 0; border: 0; border-radius: 4px; background-color: transparent; }
+.brand { display: flex; flex-direction: row; align-items: center; cursor: pointer; }
+.brand-logo { width: 30px; height: 30px; flex-shrink: 0; }
+.brand-name { font-size: 18px; font-weight: 600; color: #303133; margin-left: 9px; white-space: nowrap; }
+.top-title { flex: 1; min-width: 0; padding: 0 24px; color: #909399; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-actions { display: flex; flex-direction: row; align-items: center; margin-left: auto; flex-shrink: 0; }
+.language-control { display: flex; flex-direction: row; align-items: center; min-height: 36px; margin-right: 24px; cursor: pointer; }
+.language-name { font-size: 13px; color: #606266; margin: 0 6px; }
+.account-control { display: flex; flex-direction: row; align-items: center; min-height: 36px; cursor: pointer; }
+.account-name { font-size: 14px; color: #606266; max-width: 150px; margin: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-button { margin: 0; padding: 0 10px; background-color: transparent; border: 0; }
+.account-text { font-size: 14px; color: #2979ff; }
+@media screen and (max-width: 767px) {
+  .admin-top { padding-right: 12px; }
+  .top-title { display: none; }
+  .language-name { display: none; }
+  .language-control { margin-right: 12px; }
+  .account-name { max-width: 80px; }
+  .brand-name { font-size: 15px; }
+  .brand-logo { width: 24px; height: 24px; }
+  .icon-button { margin-right: 4px; }
+}
+@media screen and (max-width: 380px) {
+  .account-name { max-width: 48px; }
+  .brand-name { font-size: 14px; }
+}
+</style>

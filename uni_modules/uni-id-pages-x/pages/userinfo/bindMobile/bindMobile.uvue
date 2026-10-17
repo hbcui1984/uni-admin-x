@@ -1,0 +1,114 @@
+<template>
+	<view class="account-page">
+		<view v-if="!smsEnabled" class="form">
+			<text class="account-title">绑定手机号码</text>
+			<text class="account-note">当前未开通短信服务，请联系系统管理员。</text>
+		</view>
+		<view v-else class="form">
+			<!-- 获取验证码组件（输入手机号码+发送短信验证码所需的图形验证码，获得短信验证码） -->
+			<uni-id-pages-x-smsCode scene="bind-mobile-by-sms" ref="smsCodeRef"
+				@input="smsCodeInput"></uni-id-pages-x-smsCode>
+			<button class="uni-btn" type="primary" @click="sendSmsCode">获取验证码</button>
+		</view>
+
+		<!-- 多次登录错误时，获取登录时专用的图形验证码 （悬浮） -->
+		<uni-popup-captcha v-if="smsEnabled" @cancel="popupCaptchaCancel" ref="popupCaptchaRef" scene="bind-mobile-by-sms" v-model="data.captcha"
+			title="请输入验证码"></uni-popup-captcha>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { mutations } from '@/uni_modules/uni-id-pages-x/store.uts';
+	import config from '@/uni_modules/uni-id-pages-x/config.uts';
+	const smsEnabled = config.getBoolean('smsEnabled') == true
+	const smsCodeRef = ref<UniIdPagesXSmsCodeComponentPublicInstance | null>(null)
+	const popupCaptchaRef = ref<UniPopupCaptchaComponentPublicInstance | null>(null)
+	
+	const data = reactive({
+		needCaptcha: false,
+		captcha: ''
+	})
+
+	function sendSmsCode() {
+		if (!smsEnabled) return
+		smsCodeRef.value!.sendSmsCode()
+	}
+
+	function smsCodeInput(param : UTSJSONObject) {
+		if (!smsEnabled) return
+		const mobile = param.getString("mobile") as string
+		const code = param.getString("code") as string
+		if (mobile.length == 11 && code.length == 6) {
+			bindMobileBySms(param)
+		}
+	}
+
+	function bindMobileBySms(param : UTSJSONObject) {
+		function setCaptchaRetry() {
+			uni.showToast({
+				title: '请输入验证码',
+				icon: 'none',
+				duration: 3000
+			})
+			popupCaptchaRef.value!.open(() => {
+				bindMobileBySms(param)
+			})
+		}
+
+		if (data.needCaptcha) {
+			if (data.captcha.length != 4) {
+				return setCaptchaRetry()
+			}
+			param.set("captcha", data.captcha)
+		}
+
+		uni.showLoading({ "title": "请求中" })
+		const uniIdCo = uniCloud.importObject("uni-id-co", { "customUI": true })
+		uniIdCo.bindMobileBySms(param)
+			.finally(() : void => {
+				uni.hideLoading()
+			})
+			.then<void>((e : UTSJSONObject) : void => {
+				// console.log(e)
+				smsCodeRef.value!.hideCodeInput()
+
+				uni.showToast({
+					title: '绑定成功',
+					icon: 'none',
+					duration: 3000
+				})
+				mutations.updateUserInfo({
+					"mobile": param.getString("mobile")
+				} as UTSJSONObject)
+				setTimeout(() => {
+					uni.navigateBack()
+				}, 300)
+			})
+			.catch<void>((err : any | null) : void => {
+				const error = err as UniCloudError
+				console.error(error)
+				console.error(error.code)
+				uni.showToast({
+					title: error.message,
+					icon: 'none',
+					duration: 3000,
+					mask: false
+				})
+			})
+	}
+
+	function popupCaptchaCancel() {
+		smsCodeRef.value!.reset()
+		data.captcha = ""
+	}
+
+</script>
+
+<style lang="scss" scoped>
+@import url("/uni_modules/uni-id-pages-x/common/common.scss");
+@import url("/uni_modules/uni-id-pages-x/common/account.scss");
+
+.uni-btn {
+	margin-top: 10px;
+}
+</style>
