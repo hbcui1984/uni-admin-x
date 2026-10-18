@@ -1,8 +1,7 @@
 // 云对象教程: https://uniapp.dcloud.net.cn/uniCloud/cloud-obj
 // jsdoc语法提示教程：https://ask.dcloud.net.cn/docs/#//ask.dcloud.net.cn/article/129
 
-// 导入 createConfig 模块
-const createConfig = require('uni-config-center');
+const uniIdCommon = require('uni-id-common');
 // 导入 buildTemplateData 模块
 const buildTemplateData = require('./build-template-data');
 // 导入 utils 模块中的 parserDynamicField 函数
@@ -16,13 +15,46 @@ const { presetCondition, conditionConvert } = require('./preset-condition');
 const uniSmsCo = uniCloud.importObject('uni-sms-co');
 // 导入 uniCloud.database 模块
 const db = uniCloud.database();
-// 使用 createConfig 函数创建 smsConfig 对象
-const smsConfig = createConfig({
-  pluginId: 'uni-sms-co',
-}).config();
 // 定义 errCode 函数，返回错误码
 function errCode(code) {
   return 'uni-sms-co-' + code;
+}
+
+async function requireSmsAdmin(context) {
+  const token = context.getUniIdToken();
+  if (typeof token !== 'string' || !token) {
+    throw { errCode: errCode('auth-required'), errMsg: '请先登录有效管理员账号' };
+  }
+
+  let payload;
+  try {
+    payload = await uniIdCommon.createInstance({ clientInfo: context.getClientInfo() })
+      .checkToken(token, { autoRefresh: false });
+  } catch (_) {
+    throw { errCode: errCode('auth-required'), errMsg: '登录状态无效，请重新登录' };
+  }
+  if (!payload || payload.errCode || typeof payload.uid !== 'string' || !payload.uid) {
+    throw { errCode: errCode('auth-required'), errMsg: '登录状态无效，请重新登录' };
+  }
+  if (!Array.isArray(payload.role) || !payload.role.includes('admin')) {
+    throw { errCode: errCode('permission-denied'), errMsg: '仅管理员可访问短信管理' };
+  }
+
+  let result;
+  try {
+    result = await db.collection('uni-id-users').doc(payload.uid)
+      .field({ _id: true, status: true, role: true }).get();
+  } catch (_) {
+    throw { errCode: errCode('auth-unavailable'), errMsg: '暂时无法核验管理员身份，请稍后重试' };
+  }
+  if (!result || result.errCode || !Array.isArray(result.data)) {
+    throw { errCode: errCode('auth-unavailable'), errMsg: '暂时无法核验管理员身份，请稍后重试' };
+  }
+  const user = result.data[0];
+  if (result.data.length !== 1 || !user || user._id !== payload.uid || user.status !== 0 ||
+    !Array.isArray(user.role) || !user.role.includes('admin')) {
+    throw { errCode: errCode('permission-denied'), errMsg: '当前账号无有效管理员权限' };
+  }
 }
 
 // 定义 tableNames 对象
@@ -34,6 +66,8 @@ const tableNames = {
 
 module.exports = {
   _before: async function () {
+    // 包含内部自调用：没有可验证的管理员 token 一律拒绝，不按 source 或客户端 uid 放行。
+    await requireSmsAdmin(this);
     // 通用预处理器
     this.tableNames = tableNames;
 

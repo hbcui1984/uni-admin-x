@@ -10,7 +10,7 @@
         <download-excel class="hide-on-phone" :fields="exportExcel.fields" :data="exportExcelData" :type="exportExcel.type" :name="exportExcel.filename">
           <button class="uni-button" type="primary" size="mini">导出 Excel</button>
         </download-excel>
-        <button class="uni-button" type="primary" size="mini" @click="batchSmsRef.open()">群发短信</button>
+        <button class="uni-button" type="primary" size="mini" disabled title="短信任务调度尚未完成安全联调">群发短信（待联调）</button>
       </view>
     </view>
     <view class="uni-container">
@@ -78,7 +78,7 @@
     <!-- #endif -->
 
     <!-- #ifdef H5 -->
-    <batch-sms ref="batchSmsRef" toType="userTags" :receiver="smsReceiver"></batch-sms>
+    <batch-sms v-if="false" ref="batchSmsRef" toType="userTags" :receiver="smsReceiver"></batch-sms>
     <!-- #endif -->
   </view>
 </template>
