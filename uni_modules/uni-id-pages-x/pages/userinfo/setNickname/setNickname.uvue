@@ -3,7 +3,7 @@
     <view class="form">
       <text class="account-title">修改昵称</text>
       <uni-id-pages-x-input class="my-input" v-model="nickname" title="昵称" placeholder="请输入昵称"
-        :focus="true" :maxlength="25" @confirm="save" />
+        :focus="true" :maxlength="100" @confirm="save" />
       <button class="uni-btn" type="primary" :disabled="submitting || !hasChange" :loading="submitting" @click="save">{{ submitting ? '保存中' : '保存' }}</button>
       <button class="cancel-button" :disabled="submitting" @click="cancel">取消</button>
     </view>
@@ -35,6 +35,10 @@
     }
     const uid = currentUser.uid
     const value = nickname.value.trim()
+    if (value.includes('@') || /^\d+$/.test(value) || value.length > 100) {
+      uni.showToast({ title: '昵称不能包含@、不能为纯数字，且最多100个字符', icon: 'none' })
+      return
+    }
     submitting.value = true
     uni.showLoading({ title: '保存中', mask: true })
     let completed = false

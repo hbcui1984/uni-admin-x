@@ -2,7 +2,8 @@
   <view class="captcha-box">
     <view class="captcha-img-box">
       <image class="loding" src="/uni_modules/uni-captcha/static/run.gif" v-if="loging" mode="widthFix" />
-      <image class="captcha-img" :class="{opacity:loging}" @click="getImageCaptcha(true)" :src="captchaBase64" mode="widthFix" />
+      <image v-if="captchaBase64.length > 0" class="captcha-img" :class="{opacity:loging}" @click="getImageCaptcha(true)" :src="captchaBase64" mode="widthFix" />
+      <button v-if="!loging && captchaBase64.length == 0" class="captcha-retry" @click="getImageCaptcha(true)">点击重试</button>
     </view>
     <input @blur="focusCaptchaInput = false" @focus="focusCaptchaInput = true" :focus="focusCaptchaInput" type="text" class="captcha" :inputBorder="false"
       maxlength="4" v-model="val" placeholder="请输入验证码" :cursor-spacing="cursorSpacing" />
@@ -10,6 +11,11 @@
 </template>
 
 <script>
+  type CaptchaResponse = {
+    captchaBase64?: string,
+    errCode?: number | string,
+    errMsg?: string
+  }
   export default {
     emits: ["modelValue","update:modelValue"],
     props: {
@@ -86,33 +92,30 @@
       setFocus(state:boolean){
         this.focusCaptchaInput = state
       },
-      getImageCaptcha(focus : boolean) {
+      async getImageCaptcha(focus : boolean) {
         this.loging = true
         if (focus) {
           this.val = ''
           this.focusCaptchaInput = true
         }
-        const uniIdCo = uniCloud.importObject("uni-captcha-co", {
-          customUI: true
-        })
-        uniIdCo.getImageCaptcha({
-          scene: this.scene,
-          isUniAppX:true
-        }).then((result : UTSJSONObject) => {
-          this.captchaBase64 = (result.getString('captchaBase64') as string)
-        })
-       .catch((err : any | null) : void => {
-         const error = err as UniCloudError
-         console.error(error)
-         console.error(error.code)
-        	uni.showToast({
-        		title: error.message,
-        		icon: 'none'
-        	});
-        })
-        .finally(()=> {
-        	this.loging = false
-        })
+        try {
+          const uniIdCo = uniCloud.importObject("uni-captcha-co", { customUI: true })
+          if (uniIdCo == null) throw new Error('验证码服务未就绪，请检查云空间配置')
+          const result = await uniIdCo.getImageCaptcha<CaptchaResponse>({
+            scene: this.scene,
+            isUniAppX: true
+          })
+          if (result?.errCode) throw new Error(result.errMsg || '验证码加载失败')
+          if (typeof result?.captchaBase64 != 'string' || result.captchaBase64.length == 0) {
+            throw new Error('验证码服务未返回有效图片，请重试')
+          }
+          this.captchaBase64 = result.captchaBase64
+        } catch (err: any | null) {
+          this.captchaBase64 = ''
+          uni.showToast({ title: err?.errMsg || err?.message || '验证码加载失败，请重试', icon: 'none' })
+        } finally {
+          this.loging = false
+        }
       }
     }
   }
@@ -141,6 +144,18 @@
   .captcha-img-box {
     position: relative;
     background-color: #FEFAE7;
+  }
+
+  .captcha-retry {
+    width: 100px;
+    height: 44px;
+    padding: 0;
+    margin: 0;
+    line-height: 44px;
+    font-size: 13px;
+    color: #2979ff;
+    background-color: #f5f7fa;
+    border-radius: 4px;
   }
 
   .captcha {

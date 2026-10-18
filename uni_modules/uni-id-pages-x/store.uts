@@ -51,7 +51,7 @@ function initState() {
 	} catch (e) {
 		state.isLogin = false
 		state.userInfo = {} as UTSJSONObject
-		console.error('init userInfo error', e);
+		console.warn('本地登录缓存无效，按未登录处理');
 	}
 };
 initState()
@@ -77,22 +77,23 @@ export const mutations : Mutations = {
 	  if (param == null) {
 	    usersCollection
 	      .doc(user_id)
-	      .field('_id,username,nickname,avatar_file,mobile')
+      .field('_id,username,nickname,avatar_file,mobile,email')
 	      .get()
 	      .then(async res => {
 	        if (res?.data == null || res.data.length == 0 || uniCloud.getCurrentUserInfo()?.uid != user_id) return
-	        const uniIdCo = uniCloud.importObject('uni-id-co', {
-	          customUI: true
-	        })
-	
-	        if (uniIdCo == null) throw new Error('账号云对象不可用')
-	        const realNameInfo = await uniIdCo.getRealNameInfo()
-	        if (uniCloud.getCurrentUserInfo()?.uid == user_id) {
-	            state.userInfo = UTSJSONObject.assign(res.data[0], {
-	              realNameInfo
-	            })
-	            afterUpdateUserInfo()
-	        }
+        state.userInfo = UTSJSONObject.assign({} as UTSJSONObject, res.data[0])
+        afterUpdateUserInfo()
+        try {
+          const uniIdCo = uniCloud.importObject('uni-id-co', { customUI: true })
+          if (uniIdCo == null) return
+          const realNameInfo = await uniIdCo.getRealNameInfo()
+          if (uniCloud.getCurrentUserInfo()?.uid == user_id) {
+            state.userInfo['realNameInfo'] = realNameInfo
+            afterUpdateUserInfo()
+          }
+        } catch (_) {
+          console.warn('实名认证资料暂不可用，已保留基本账号资料')
+        }
 	      })
 	      .catch((err: any | null) => {
 	        const error = err as UniCloudError
