@@ -1,0 +1,138 @@
+<template>
+  <view class="account-page">
+    <view class="account-brand">
+      <image class="account-logo" src="/static/logo.png" mode="aspectFit" />
+      <text class="account-brand-name">uni-admin-x</text>
+    </view>
+    <view class="form">
+      <text class="account-title">注册超级管理员</text>
+      <text v-if="checking" class="admin-note">正在检查管理员状态…</text>
+      <view v-else-if="!canRegister">
+        <text class="admin-note">{{ error || '已有超级管理员，请使用管理员账号登录。' }}</text>
+        <button v-if="error.length > 0" class="uni-btn" @click="checkStatus">重新检查</button>
+        <button class="uni-btn" @click="toLogin">返回登录</button>
+      </view>
+      <template v-else>
+        <uni-id-pages-x-input class="my-input" title="用户名" placeholder="用户名（字母、数字、_、-）" v-model="form.username" @confirm="submit" />
+        <uni-id-pages-x-input class="my-input" title="昵称" placeholder="昵称（可选）" v-model="form.nickname" :maxlength="100" @confirm="submit" />
+        <uni-id-pages-x-input class="my-input" title="设置密码" placeholder="请输入密码" v-model="form.password" password @confirm="submit" />
+        <uni-id-pages-x-input class="my-input" title="确认密码" placeholder="再次输入密码" v-model="form.confirmation" password @confirm="submit" />
+        <uni-id-pages-x-agreements ref="agreementsRef" scope="register" />
+        <text v-if="validation.length > 0" class="admin-error">{{ validation }}</text>
+        <button class="uni-btn" type="primary" :disabled="submitting || completed" :loading="submitting" @click="submit">{{ submitting ? '注册中' : '注册超级管理员' }}</button>
+        <button class="admin-back" :disabled="submitting || completed" @click="toLogin">返回登录</button>
+      </template>
+    </view>
+  </view>
+</template>
+
+<script setup lang="uts">
+  import { getAdminRegistrationStatus, firstAdminRegistrationOpen, registrationStatusKnown } from '@/common/admin-registration'
+  import { state } from '@/uni_modules/uni-id-pages-x/store.uts'
+  import { checkPassword, getAccountRedirect, logout } from '@/uni_modules/uni-id-pages-x/common/common.uts'
+  import { accountErrorMessage, getAccountCloudObject } from '@/uni_modules/uni-id-pages-x/common/client-cloud.uts'
+  import { normalizeAccountRoute, accountRouteUrl, accountLoginPath } from '../../common/account-route'
+  import type { RegisterAdminResponse } from '@/common/admin-setup-types'
+
+  const form = reactive({ username: '', nickname: '', password: '', confirmation: '' })
+  const checking = ref(true)
+  const canRegister = ref(false)
+  const submitting = ref(false)
+  const completed = ref(false)
+  const error = ref('')
+  const validation = ref('')
+  const agreementsRef = ref<UniIdPagesXAgreementsComponentPublicInstance | null>(null)
+  let generation = 0
+  let active = true
+  let returnUrl = '/pages/index/index'
+
+  async function checkStatus() {
+    if (submitting.value || completed.value) return
+    const request = ++generation
+    checking.value = true
+    canRegister.value = false
+    error.value = ''
+    try {
+      const result = await getAdminRegistrationStatus()
+      if (!active || request != generation) return
+      if (!registrationStatusKnown(result)) throw new Error('管理员状态未知')
+      canRegister.value = firstAdminRegistrationOpen(result)
+      if (result.hasAdmin === false && !canRegister.value) error.value = '首任管理员注册暂被锁定，请维护者核查注册结果。'
+    } catch (_) {
+      if (active && request == generation) error.value = '管理员状态检查失败，请检查本地账号服务后重试。'
+    } finally {
+      if (request == generation) checking.value = false
+    }
+  }
+
+  function valid(): boolean {
+    form.username = form.username.trim()
+    if (!form.username || !form.password || !form.confirmation) validation.value = '请填写用户名、密码和确认密码'
+    else if (!/^[a-zA-Z0-9_-]+$/.test(form.username) || /^\d+$/.test(form.username)) validation.value = '用户名只能包含字母、数字、下划线和连字符，且不能为纯数字'
+    else if (form.nickname.includes('@') || /^\d+$/.test(form.nickname) || form.nickname.length > 100) validation.value = '昵称不能包含@、不能为纯数字，且最多100个字符'
+    else if (form.password != form.confirmation) validation.value = '两次输入的密码不一致'
+    else {
+      const checked = checkPassword(form.password)
+      if (checked.getBoolean('pass') != true) validation.value = checked.getString('errMsg') ?? '密码强度不符合要求'
+      else { validation.value = ''; return true }
+    }
+    return false
+  }
+
+  async function submit() {
+    if (submitting.value || completed.value || checking.value || !canRegister.value || !valid()) return
+    if (state.pendingAgreements) {
+      agreementsRef.value?.showPopupAgreements(() => { if (!state.pendingAgreements) submit() })
+      return
+    }
+    submitting.value = true
+    try {
+      const current = await getAdminRegistrationStatus()
+      if (!active) return
+      if (!firstAdminRegistrationOpen(current)) {
+        canRegister.value = false
+        error.value = current?.hasAdmin === true ? '已有超级管理员，请返回登录。' : '管理员状态已变化，请重新检查后再注册。'
+        return
+      }
+      const payload: UTSJSONObject = { username: form.username, password: form.password }
+      if (form.nickname.length > 0) payload['nickname'] = form.nickname
+      const result = await getAccountCloudObject('uni-id-co').registerAdmin<RegisterAdminResponse>(payload)
+      if (result == null || result.errCode !== 0) throw new Error(result?.errMsg || '注册失败，请重试')
+      if (!active) return
+      completed.value = true
+      form.password = ''; form.confirmation = ''
+      uni.$emit('uni-admin-registration-check')
+      logout(returnUrl)
+      uni.showToast({ title: '超级管理员已创建，请登录', icon: 'none' })
+    } catch (failure) {
+      if (active) {
+        const response = failure as { errCode?: string, code?: string } | null
+        const code = response?.errCode ?? response?.code
+        if (code == 'SETUP_ADMIN_EXISTS' || code == 'uni-id-admin-exists' || code == 'SETUP_GUARD_LOCKED') {
+          canRegister.value = false
+          error.value = code == 'SETUP_GUARD_LOCKED' ? '首任管理员注册暂被锁定，请维护者核查。' : '已有超级管理员，请返回登录。'
+        } else validation.value = accountErrorMessage(failure)
+      }
+    } finally { submitting.value = false }
+  }
+
+  function toLogin() {
+    if (submitting.value || completed.value) return
+    uni.redirectTo({ url: accountRouteUrl(accountLoginPath, returnUrl) })
+  }
+  onLoad((options: OnLoadOptions) => {
+    normalizeAccountRoute(options)
+    returnUrl = getAccountRedirect()
+  })
+  onShow(() => { active = true; void checkStatus() })
+  onHide(() => { active = false; generation++ })
+  onUnload(() => { active = false; generation++; form.password = ''; form.confirmation = '' })
+</script>
+
+<style scoped>
+  @import url('/uni_modules/uni-id-pages-x/common/common.scss');
+  @import url('/uni_modules/uni-id-pages-x/common/account.scss');
+  .admin-note { font-size: 14px; line-height: 24px; color: #606266; margin: 12px 0; }
+  .admin-error { font-size: 13px; line-height: 22px; color: #b42318; margin-top: 12px; }
+  .admin-back { width: 100%; margin: 12px 0 0; min-height: 44px; line-height: 44px; font-size: 14px; border-radius: 4px; }
+</style>

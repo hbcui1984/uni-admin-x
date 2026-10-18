@@ -4,10 +4,12 @@
     "custom": { "^cloud-image$": "@/uni_modules/uni-id-pages-x/components/cloud-image/cloud-image.uvue" }
   },
   "pages": [
-    { "path": "pages/index/index", "style": { "navigationBarTitleText": "首页" } },
+    { "path": "pages/index/index", "needLogin": true, "style": { "navigationBarTitleText": "首页" } },
     { "path": "pages/error/404", "style": { "navigationBarTitleText": "页面不存在" } },
+    { "path": "pages/setup/index", "style": { "navigationBarTitleText": "基础菜单维护", "topWindow": false, "leftWindow": false } },
     { "path": "uni_modules/uni-id-pages-x/pages/login/login", "style": { "navigationBarTitleText": "登录", "topWindow": false, "leftWindow": false } },
     { "path": "uni_modules/uni-id-pages-x/pages/register/register", "style": { "navigationBarTitleText": "注册", "topWindow": false, "leftWindow": false } },
+    { "path": "uni_modules/uni-id-pages-x/pages/register/register-admin", "style": { "navigationBarTitleText": "注册超级管理员", "topWindow": false, "leftWindow": false } },
     { "path": "uni_modules/uni-id-pages-x/pages/retrieve/retrieve", "style": { "navigationBarTitleText": "找回密码", "topWindow": false, "leftWindow": false } },
     { "path": "uni_modules/uni-id-pages-x/pages/userinfo/userinfo", "style": { "navigationBarTitleText": "个人资料" } },
     { "path": "uni_modules/uni-id-pages-x/pages/userinfo/setNickname/setNickname", "style": { "navigationBarTitleText": "修改昵称" } },
@@ -58,7 +60,7 @@
   },
   "uniIdRouter": {
     "loginPage": "uni_modules/uni-id-pages-x/pages/login/login",
-    "needLogin": ["^pages/system/", "^uni_modules/uni-id-pages-x/pages/userinfo/"],
+    "needLogin": ["^pages/index/index$", "^pages/system/", "^pages/account/", "^pages/demo/", "^uni_modules/uni-id-pages-x/pages/userinfo/"],
     "resToLogin": true
   }
 }

@@ -1,6 +1,6 @@
 <!-- 注销（销毁）账号 -->
 <template>
-	<view class="uni-content">
+	<view v-if="allowAccountDeactivation" class="uni-content">
 		<scroll-view class="scroll-view">
 			<text class="words">{{ words }}</text>
 		</scroll-view>
@@ -9,11 +9,17 @@
 			<button @click="cancel" :disabled="submitting || confirming" class="btn button-group-btn" type="primary">取消</button>
 		</view>
 	</view>
+	<view v-else class="uni-content">
+		<text class="words">账号注销暂未开放，请联系管理员处理。</text>
+		<button class="button-group-btn" @click="cancel">返回</button>
+	</view>
 </template>
 
 <script setup lang="uts">
 	import { logout } from '@/uni_modules/uni-id-pages-x/common/common.uts'
 	import { getAccountCloudObject, accountErrorMessage } from '@/uni_modules/uni-id-pages-x/common/client-cloud.uts'
+	import config from '@/uni_modules/uni-id-pages-x/config.uts'
+	const allowAccountDeactivation = config.getBoolean('allowAccountDeactivation') == true
 	const submitting = ref(false)
 	const confirming = ref(false)
 	const words = ref(`一、注销是不可逆操作，注销后:\n
@@ -31,6 +37,7 @@
 	}
 
 	function nextStep() {
+		if (!allowAccountDeactivation) return
 		if (submitting.value || confirming.value) return
 		confirming.value = true
 		uni.showModal({

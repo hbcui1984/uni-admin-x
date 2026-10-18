@@ -1,0 +1,9 @@
+{
+  "name": "uni-admin-co",
+  "version": "1.0.0",
+  "main": "index.obj.js",
+  "dependencies": {
+    "uni-admin-setup": "file:../common/uni-admin-setup",
+    "uni-id-common": "file:../../../uni_modules/uni-id-common/uniCloud/cloudfunctions/common/uni-id-common"
+  }
+}

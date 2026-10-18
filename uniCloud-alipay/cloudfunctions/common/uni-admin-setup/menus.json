@@ -1,0 +1,11 @@
+[
+  { "menu_id": "index", "parent_id": "", "name": "首页", "url": "/pages/index/index", "icon": "uni-icons-home", "sort": 100, "enable": true, "permission": [] },
+  { "menu_id": "system_management", "parent_id": "", "name": "系统管理", "url": "", "icon": "admin-icons-fl-xitong", "sort": 1000, "enable": true, "permission": [] },
+  { "menu_id": "system_user", "parent_id": "system_management", "name": "用户管理", "url": "/pages/system/user/list", "icon": "admin-icons-manager-user", "sort": 1010, "enable": true, "permission": ["READ_UNI_ID_USERS"] },
+  { "menu_id": "system_role", "parent_id": "system_management", "name": "角色管理", "url": "/pages/system/role/list", "icon": "admin-icons-manager-role", "sort": 1020, "enable": true, "permission": ["READ_UNI_ID_ROLES"] },
+  { "menu_id": "system_permission", "parent_id": "system_management", "name": "权限管理", "url": "/pages/system/permission/list", "icon": "admin-icons-manager-permission", "sort": 1030, "enable": true, "permission": ["READ_UNI_ID_PERMISSIONS"] },
+  { "menu_id": "system_menu", "parent_id": "system_management", "name": "菜单管理", "url": "/pages/system/menu/list", "icon": "admin-icons-manager-menu", "sort": 1040, "enable": true, "permission": ["CREATE_OPENDB_ADMIN_MENUS", "UPDATE_OPENDB_ADMIN_MENUS", "DELETE_OPENDB_ADMIN_MENUS"] },
+  { "menu_id": "system_app", "parent_id": "system_management", "name": "应用管理", "url": "/pages/system/app/list", "icon": "admin-icons-manager-app", "sort": 1035, "enable": true, "permission": ["READ_OPENDB_APP_LIST"] },
+  { "menu_id": "system_tag", "parent_id": "system_management", "name": "标签管理", "url": "/pages/system/tag/list", "icon": "admin-icons-manager-tag", "sort": 1037, "enable": true, "permission": ["READ_UNI_ID_TAG"] },
+  { "menu_id": "system_safety", "parent_id": "system_management", "name": "用户日志", "url": "/pages/system/safety/list", "icon": "admin-icons-safety", "sort": 1050, "enable": true, "permission": ["READ_UNI_ID_LOG"] }
+]

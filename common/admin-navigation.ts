@@ -44,7 +44,8 @@ export function currentRoute(): string {
 }
 
 export function identity() {
-  const user = uniCloud.config ? uniCloud.getCurrentUserInfo() : null
+  let user: ReturnType<typeof uniCloud.getCurrentUserInfo> | null = null
+  try { user = uniCloud.config ? uniCloud.getCurrentUserInfo() : null } catch (_) { /* 损坏的本地 token 按未登录处理。 */ }
   return {
     uid: user?.uid || '',
     tokenExpired: user?.tokenExpired || 0,

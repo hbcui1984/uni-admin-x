@@ -1,7 +1,10 @@
 export default {
   "debug":false,
+  "allowPublicRegister":false,
   // 仅在短信服务配置完成后开启，独立于账号密码登录。
   "smsEnabled":false,
+  // 注销的跨会话撤销与最后管理员保护完成服务端联调后，才可开放。
+  "allowAccountDeactivation":false,
   "agreements":{
     "serviceUrl": "", // 待填写本产品正式用户服务协议 URL
     "privacyUrl": "", // 待填写本产品正式隐私政策 URL
@@ -10,9 +13,8 @@ export default {
     * 1. register注册（包括登录并注册，如：短信验证码登录，一键登录）
     * 2. login登录（如：用户名密码登录，短信验证码登录）
     */
-    "scopeList": [
-      "register","login"
-    ]
+    // 默认不启用协议确认，与旧版 uni-admin 一致；启用时填写上述两个 URL，并加入 register、login。
+    "scopeList": [] as string[]
   },
    "needLogin":[], // 由项目 pages.json 的 uniIdRouter 统一守卫
   "loginTypes":[

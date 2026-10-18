@@ -6,6 +6,7 @@
     "keywords": [],
     "author": "DCloud",
     "dependencies": {
+        "uni-admin-setup": "file:../../../../../uniCloud-alipay/cloudfunctions/common/uni-admin-setup",
         "uni-captcha": "file:../../../../uni-captcha/uniCloud/cloudfunctions/common/uni-captcha",
         "uni-cloud-s2s": "file:../../../../uni-cloud-s2s/uniCloud/cloudfunctions/common/uni-cloud-s2s",
         "uni-config-center": "file:../../../../uni-config-center/uniCloud/cloudfunctions/common/uni-config-center",
@@ -24,5 +25,5 @@
     "origin-plugin-dev-name": "uni-id-pages",
     "origin-plugin-version": "1.1.28",
     "plugin-dev-name": "uni-id-pages-x",
-    "plugin-version": "2.0.1"
+    "plugin-version": "2.0.2"
 }

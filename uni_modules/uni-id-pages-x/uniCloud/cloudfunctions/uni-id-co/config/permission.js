@@ -1,5 +1,9 @@
 // 各接口权限配置，未配置接口表示允许任何用户访问（包括未登录用户）
 module.exports = {
+  // 仅此全局只读方法显式免登录；_before 不为它初始化用户鉴权。
+  getAdminRegistrationStatus: {
+    auth: false
+  },
   // 管理接口
   addUser: {
     // auth: true // 已登录用户方可操作，配置角色或权限时此项可不写

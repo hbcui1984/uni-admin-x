@@ -4,16 +4,21 @@
 			<image class="account-logo" src="/static/logo.png" mode="aspectFit" />
 			<text class="account-brand-name">uni-admin-x</text>
 		</view>
-		<view class="form">
+		<view v-if="!allowPublicRegister" class="form">
+			<text class="account-title">{{ blockedMessage }}</text>
+			<button class="uni-btn" @click="toLogin">返回登录</button>
+			<button v-if="registrationCheckFailed" class="uni-btn" @click="checkAdminRegistration">重新检查</button>
+		</view>
+		<view v-else class="form">
 			<text class="account-title">注册账号</text>
 			<view class="item">
 				<text class="required">*</text>
-				<uni-id-pages-x-input class="my-input" title="用户名" placeholder="3~20位小写字母和数字" v-model="data.username"
+				<uni-id-pages-x-input class="my-input" title="用户名" placeholder="用户名（字母、数字、_、-）" v-model="data.username"
 					ref="usernameRef" @confirm="registerBefore"></uni-id-pages-x-input>
 			</view>
 			<view class="item">
-				<uni-id-pages-x-input class="my-input" title="昵称" placeholder="昵称（可选，3~20位）"
-					v-model="data.nickname" ref="nicknameRef" @confirm="registerBefore"></uni-id-pages-x-input>
+				<uni-id-pages-x-input class="my-input" title="昵称" placeholder="昵称（可选，不能含@或为纯数字）"
+					v-model="data.nickname" :maxlength="100" ref="nicknameRef" @confirm="registerBefore"></uni-id-pages-x-input>
 			</view>
 			<view class="item">
 				<text class="required">*</text>
@@ -43,7 +48,34 @@
 	import { getAccountCloudObject, accountErrorMessage } from '@/uni_modules/uni-id-pages-x/common/client-cloud.uts';
 	import { state } from '@/uni_modules/uni-id-pages-x/store.uts';
 	import { normalizeAccountRoute, accountRouteUrl, accountLoginPath } from '../../common/account-route';
+	import config from '../../config.uts';
+	import { adminRegisterPath, getAdminRegistrationStatus, firstAdminRegistrationOpen, registrationStatusKnown } from '@/common/admin-registration';
+	const allowPublicRegister = config.getBoolean('allowPublicRegister') == true
+	const blockedMessage = ref('正在检查管理员状态…')
+	const registrationCheckFailed = ref(false)
+	let registrationActive = true
+	let registrationRequest = 0
+	async function checkAdminRegistration() {
+		if (allowPublicRegister) return
+		const request = ++registrationRequest
+		registrationCheckFailed.value = false
+		try {
+			const result = await getAdminRegistrationStatus()
+			if (!registrationActive || request != registrationRequest) return
+			if (!registrationStatusKnown(result)) throw new Error('管理员状态未知')
+			if (firstAdminRegistrationOpen(result)) {
+				uni.redirectTo({ url: accountRouteUrl(adminRegisterPath, getAccountRedirect()) })
+			} else blockedMessage.value = result.hasAdmin === true ? '已有超级管理员，请登录' : '首任管理员注册暂被锁定，请联系维护者'
+		} catch (_) {
+			if (registrationActive && request == registrationRequest) {
+				blockedMessage.value = '管理员状态检查失败'
+				registrationCheckFailed.value = true
+			}
+		}
+	}
 	onLoad((query : OnLoadOptions) => { normalizeAccountRoute(query) })
+	onShow(() => { registrationActive = true; void checkAdminRegistration() })
+	onHide(() => { registrationActive = false; registrationRequest++ })
 
 	const usernameRef = ref<UniIdPagesXInputComponentPublicInstance | null>(null)
 	const nicknameRef = ref<UniIdPagesXInputComponentPublicInstance | null>(null)
@@ -56,6 +88,7 @@
 	const captchaReady = ref(false)
 	const captchaError = ref('验证码服务检查中')
 	onMounted(() => {
+		if (!allowPublicRegister) return
 		try {
 			getAccountCloudObject('uni-captcha-co')
 			captchaReady.value = true
@@ -80,7 +113,7 @@
 	}
 
 	function registerBefore() {
-		if (submitting.value) return
+		if (submitting.value || !allowPublicRegister) return
 		if (!captchaReady.value) {
 			uni.showToast({ title: captchaError.value, icon: 'none' })
 			return
@@ -121,22 +154,21 @@
 			}
 		}
 
-		const usernameRegExp = new RegExp("^(?=.*[a-z])(?=.*\\d)[a-z\\d]{3,20}$")
-		if (!usernameRegExp.test(data.username)) {
+		const usernameRegExp = new RegExp("^[a-zA-Z0-9_-]+$")
+		if (!usernameRegExp.test(data.username) || /^\d+$/.test(data.username)) {
 			usernameRef.value!.setFocus(true)
 			return uni.showModal({
-				content: "用户名由数字和小写字母的3-20个字符组成",
+				content: "用户名只能包含字母、数字、下划线和连字符，且不能为纯数字",
 				showCancel: false,
 				confirmText: "知道了"
 			})
 		}
 
 		if (data.nickname.length > 0) {
-			const nicknameRegExp = new RegExp("^[\u4e00-\u9fa5a-z0-9]{3,20}$")
-			if (!nicknameRegExp.test(data.nickname)) {
+			if (data.nickname.indexOf('@') != -1 || /^\d+$/.test(data.nickname) || data.nickname.length > 100) {
 				nicknameRef.value!.setFocus(true)
 				return uni.showModal({
-					content: "昵称由小写字母、数字、中文组成的3-20位字符串",
+					content: "昵称不能包含@、不能为纯数字，且最多100个字符",
 					showCancel: false,
 					confirmText: "知道了"
 				})
@@ -192,7 +224,7 @@
 	}
 
 	async function register() {
-		if (submitting.value) return
+		if (submitting.value || !allowPublicRegister) return
 		submitting.value = true
 		const payload : UTSJSONObject = {
 			"username": data.username,

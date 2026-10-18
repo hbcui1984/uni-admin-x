@@ -56,7 +56,9 @@ export const loginSuccess = (_ : UTSJSONObject) => {
 
 }
 
-export const logout = () => {
+export const logout = (redirectTarget : any | null = null) => {
+	// 点击事件不能作为回跳地址；仍使用现有路由白名单。
+	const target = typeof redirectTarget == 'string' ? safeAccountRedirect(redirectTarget as string) : null
 	// 1. 已经过期就不需要调用服务端的注销接口 2. 即使调用注销接口失败，也不能阻塞客户端退出
 	const clearLocalLoginState = () => {
 		uni.removeStorageSync('uni_id_token')
@@ -67,6 +69,10 @@ export const logout = () => {
 		uni.$emit('uni-id-pages-x-logout', '')
 	}
 	const redirectToLogin = () => {
+		if (target != null) {
+			uni.reLaunch({ url: '/uni_modules/uni-id-pages-x/pages/login/login?uniIdRedirectUrl=' + encodeURIComponent(target) })
+			return
+		}
 		uni.redirectTo({
 			url: "/uni_modules/uni-id-pages-x/pages/login/login"
 		})
@@ -100,19 +106,19 @@ export const checkPassword = (password : string) : UTSJSONObject => {
 	// 密码强度表达式
 	const passwordRules : UTSJSONObject = {
 		"super": {
-			"rule": "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/])[0-9a-zA-Z~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/]{8,16}$",
+			"rule": "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[~!@#$%^&*_\\-+=`|\\\\(){}\\[\\]:;\"'<>,.?/])[0-9a-zA-Z~!@#$%^&*_\\-+=`|\\\\(){}\\[\\]:;\"'<>,.?/]{8,16}$",
 			"errMsg": "密码必须包含大小写字母、数字和特殊符号，长度范围：8-16位之间"
 		},
 		"strong": {
-			"rule": "^(?=.*[0-9])(?=.*[a-zA-Z])(?=.*[~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/])[0-9a-zA-Z~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/]{8,16}$",
-			"errMsg": "密密码必须包含字母、数字和特殊符号，长度范围：8-16位之间"
+			"rule": "^(?=.*[0-9])(?=.*[a-zA-Z])(?=.*[~!@#$%^&*_\\-+=`|\\\\(){}\\[\\]:;\"'<>,.?/])[0-9a-zA-Z~!@#$%^&*_\\-+=`|\\\\(){}\\[\\]:;\"'<>,.?/]{8,16}$",
+			"errMsg": "密码必须包含字母、数字和特殊符号，长度范围：8-16位之间"
 		},
 		"medium": {
-			"rule": "^(?!.*[0-9]+$)(?!.*[a-zA-Z]+$)(?!.*[~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/]+$)[0-9a-zA-Z~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/]{8,16}$",
+			"rule": "^(?![0-9]+$)(?![a-zA-Z]+$)(?![~!@#$%^&*_\\-+=`|\\\\(){}\\[\\]:;\"'<>,.?/]+$)[0-9a-zA-Z~!@#$%^&*_\\-+=`|\\\\(){}\\[\\]:;\"'<>,.?/]{8,16}$",
 			"errMsg": "密码必须为字母、数字和特殊符号任意两种的组合，长度范围：8-16位之间"
 		},
 		"weak": {
-			"rule": "^(?=.*[0-9])(?=.*[a-zA-Z])[0-9a-zA-Z~!@#$%^&_\\-+=`|\\(){}\\[\\]:;\"'<>,.?/]{6,16}$",
+			"rule": "^(?=.*[0-9])(?=.*[a-zA-Z])[0-9a-zA-Z~!@#$%^&*_\\-+=`|\\\\(){}\\[\\]:;\"'<>,.?/]{6,16}$",
 			"errMsg": "密码必须包含字母和数字，长度范围：6-16位之间"
 		}
 	}

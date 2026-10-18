@@ -2,7 +2,7 @@
 	import uniIdInit from '@/uni_modules/uni-id-pages-x/init.uts'
 	import { state as account, mutations } from '@/uni_modules/uni-id-pages-x/store.uts'
 	import store from '@/store/index.js'
-	import { clearAdminNavigation } from '@/common/admin-navigation'
+	import { clearAdminNavigation, identity } from '@/common/admin-navigation'
 	// #ifdef APP-ANDROID || APP-HARMONY
 	let firstBackTime = 0
 	// #endif
@@ -14,13 +14,16 @@
 	})
 
 	onAppShow(() => {
-		if (!uniCloud.config || (uniCloud.getCurrentUserInfo()?.tokenExpired || 0) <= Date.now()) {
+		if (identity().tokenExpired <= Date.now()) {
 			account.isLogin = false
 			clearAdminNavigation(store)
 		}
 	})
 
 	onAppHide(() => {
+	})
+	onPageNotFound(() => {
+		uni.redirectTo({ url: '/pages/error/404' })
 	})
 
 	// #ifdef APP-ANDROID || APP-HARMONY

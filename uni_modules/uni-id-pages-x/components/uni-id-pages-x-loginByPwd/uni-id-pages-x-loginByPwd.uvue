@@ -10,7 +10,11 @@
 
 		<view class="link-group">
 			<text class="link link-group-link" @click="toRetrievePwd">忘记密码</text>
-			<text class="link link-group-link" @click="toRegister">注册账号</text>
+			<text v-if="canRegisterAdmin" class="link link-group-link" @click="toRegisterAdmin">注册超级管理员</text>
+		</view>
+		<view v-if="registrationError.length > 0" class="registration-status">
+			<text class="registration-error">{{ registrationError }}</text>
+			<button class="registration-retry" size="mini" :disabled="registrationLoading || submitting" @click="checkRegistration">重新检查</button>
 		</view>
 
 		<uni-popup-captcha v-if="data.needCaptcha" ref="popupCaptchaRef" scene="login-by-pwd" v-model="data.loginCaptcha" title="请输入验证码"></uni-popup-captcha>
@@ -21,7 +25,33 @@
 	import { state } from '@/uni_modules/uni-id-pages-x/store.uts';
 	import { loginSuccess, getAccountRedirect } from '@/uni_modules/uni-id-pages-x/common/common.uts';
 	import { getAccountCloudObject, accountErrorMessage } from '@/uni_modules/uni-id-pages-x/common/client-cloud.uts';
-	import { accountRouteUrl, accountRegisterPath } from '../../common/account-route';
+	import { accountRouteUrl } from '../../common/account-route';
+	import { adminRegisterPath, getAdminRegistrationStatus, firstAdminRegistrationOpen, registrationStatusKnown } from '@/common/admin-registration';
+	import type { AdminRegistrationStatusResponse } from '@/common/admin-registration-types';
+	const registrationStatus = ref<AdminRegistrationStatusResponse | null>(null)
+	const registrationLoading = ref(false)
+	const registrationError = ref('')
+	const canRegisterAdmin = computed(() : boolean => firstAdminRegistrationOpen(registrationStatus.value))
+	let registrationRequest = 0
+	let mounted = true
+	async function checkRegistration() {
+		if (submitting.value) return
+		const request = ++registrationRequest
+		registrationStatus.value = null
+		registrationError.value = ''
+		registrationLoading.value = true
+		try {
+			const response = await getAdminRegistrationStatus()
+			if (!mounted || request != registrationRequest) return
+			if (!registrationStatusKnown(response)) throw new Error('管理员状态未知')
+			registrationStatus.value = response
+			if (response.hasAdmin === false && !firstAdminRegistrationOpen(response)) registrationError.value = '首任管理员注册暂被锁定，请维护者核查注册结果。'
+		} catch (_) {
+			if (mounted && request == registrationRequest) registrationError.value = '管理员状态检查失败，请检查本地账号服务后重试。'
+		} finally {
+			if (request == registrationRequest) registrationLoading.value = false
+		}
+	}
 
 	const submitting = ref(false)
 	const completed = ref(false)
@@ -125,10 +155,10 @@
 		}
 	}
 
-	function toRegister() {
-		if (submitting.value) return
+	function toRegisterAdmin() {
+		if (submitting.value || !canRegisterAdmin.value || registrationLoading.value) return
 		uni.navigateTo({
-			url: accountRouteUrl(accountRegisterPath, getAccountRedirect())
+			url: accountRouteUrl(adminRegisterPath, getAccountRedirect())
 		})
 	}
 
@@ -144,9 +174,16 @@
 	}
 
 	onMounted(() => {
+		void checkRegistration()
+		uni.$on('uni-admin-registration-check', checkRegistration)
 		setTimeout(() => {
 				usernameRef.value?.setFocus(true)
 		}, 300)
+	})
+	onUnmounted(() => {
+		mounted = false
+		registrationRequest++
+		uni.$off('uni-admin-registration-check', checkRegistration)
 	})
 </script>
 
@@ -173,4 +210,7 @@
 		color: #083679;
 		font-size: 14px;
 	}
+	.registration-status { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+	.registration-error { font-size: 12px; line-height: 20px; color: #856321; }
+	.registration-retry { margin: 4px 0 4px 8px; font-size: 12px; }
 </style>

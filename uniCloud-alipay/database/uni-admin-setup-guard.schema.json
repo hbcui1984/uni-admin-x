@@ -1,0 +1,12 @@
+{
+  "bsonType": "object",
+  "required": ["source", "state", "created_at", "updated_at"],
+  "permission": { "read": false, "create": false, "update": false, "delete": false },
+  "properties": {
+    "_id": { "bsonType": "string" },
+    "source": { "bsonType": "string", "enum": ["claim", "register"] },
+    "state": { "bsonType": "string", "enum": ["pending", "completed", "failed", "blocked"] },
+    "created_at": { "bsonType": "long" },
+    "updated_at": { "bsonType": "long" }
+  }
+}

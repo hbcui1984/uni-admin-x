@@ -1,17 +1,14 @@
 <template>
-  <scroll-view class="home-page" scroll-y>
+  <scroll-view v-if="navigation.loggedIn" class="home-page" scroll-y>
     <view class="home-content">
       <view class="page-heading"><text class="page-title">工作台</text><text class="page-subtitle">uni-admin-x</text></view>
       <view class="status-band">
         <uni-icons :type="navigation.status === 'error' ? 'info' : 'home'" :size="20" color="#909399" />
         <text class="status-text">{{ statusText }}</text>
+        <button v-if="entries.length > 0 && (navigation.status === 'empty' || navigation.status === 'error')" class="setup-button" @click="openSetup">基础菜单维护</button>
         <button v-if="navigation.loggedIn && navigation.status !== 'loading'" class="refresh-button" title="重新加载菜单" @click="retry"><uni-icons type="reload" :size="18" color="#606266" /></button>
       </view>
-      <view v-if="!navigation.loggedIn" class="empty-state">
-        <text class="empty-title">请先登录</text><text class="empty-text">登录状态已失效，请重新登录以查看可访问的管理功能。</text>
-        <button class="primary-button" @click="login"><text class="primary-label">前往登录</text></button>
-      </view>
-      <template v-else>
+      <template v-if="navigation.loggedIn">
         <text class="section-title">常用管理</text>
         <view v-if="entries.length" class="entry-list">
           <button v-for="entry in entries" :key="entry.module" class="entry-row" @click="openEntry(entry)">
@@ -32,11 +29,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useStore } from 'vuex'
-import { onShow } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import uniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.vue'
-import { LOGIN_URL, hasPermission, navigateAdmin, useAdminNavigation } from '@/common/admin-navigation'
+import { HOME_URL, LOGIN_URL, identity, hasPermission, navigateAdmin, useAdminNavigation } from '@/common/admin-navigation'
+import { accountRouteUrl } from '@/uni_modules/uni-id-pages-x/common/account-route'
+import { adminSetupPath } from '@/common/admin-setup'
 
 const store = useStore()
 const { navigation, entries, retry } = useAdminNavigation(store)
@@ -48,7 +47,24 @@ const statusText = computed(() => {
   if (!navigation.menus.length) return '当前账号暂无可访问的已迁移菜单。'
   return '已载入当前账号可访问的管理菜单。'
 })
-function login() { uni.reLaunch({ url: LOGIN_URL }) }
+let returnUrl = HOME_URL
+let redirecting = false
+function openSetup() { uni.navigateTo({ url: adminSetupPath }) }
+function checkLogin(): boolean {
+  const user = identity()
+  if (user.uid && user.tokenExpired > Date.now()) return true
+  if (!redirecting) {
+    redirecting = true
+    uni.redirectTo({
+      url: accountRouteUrl(LOGIN_URL, returnUrl),
+      fail: () => {
+        redirecting = false
+        uni.showToast({ title: '登录页打开失败，请刷新重试', icon: 'none' })
+      }
+    })
+  }
+  return false
+}
 function openEntry(entry: { module: string; permissions: string[] }) {
   if (!entry.permissions.some(hasPermission)) {
     uni.showToast({ title: '当前账号无权访问', icon: 'none' })
@@ -56,9 +72,16 @@ function openEntry(entry: { module: string; permissions: string[] }) {
   }
   navigateAdmin(`/pages/system/${entry.module}/list`)
 }
+onLoad(options => {
+  const query = Object.entries(options || {}).filter(([, value]) => value != null)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`).join('&')
+  returnUrl = HOME_URL + (query ? '?' + query : '')
+})
 onShow(() => {
+  if (!checkLogin()) return
   store.commit('app/SET_ROUTES', [{ name: '首页', to: { path: '/pages/index/index' } }])
 })
+watch(() => navigation.loggedIn, loggedIn => { if (!loggedIn) checkLogin() })
 </script>
 
 <style scoped>
@@ -77,8 +100,7 @@ onShow(() => {
 .empty-state { display: flex; flex-direction: column; align-items: center; padding: 48px 16px; }
 .empty-title { font-size: 16px; color: #606266; margin: 12px 0; }
 .empty-text { max-width: 540px; font-size: 14px; line-height: 24px; color: #909399; text-align: center; }
-.primary-button { margin: 20px 0 0; padding: 0 20px; height: 36px; border: 0; border-radius: 4px; background-color: #2979ff; }
-.primary-label { font-size: 14px; line-height: 36px; color: #ffffff; }
 .deployment-note { max-width: 800px; margin-top: 24px; font-size: 13px; line-height: 22px; color: #909399; }
+.setup-button { margin: 12px 0; padding: 0 12px; min-height: 36px; line-height: 36px; font-size: 14px; color: #2979ff; background-color: #ffffff; border-radius: 4px; }
 @media screen and (max-width: 767px) { .home-content { padding: 16px; } }
 </style>

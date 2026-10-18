@@ -138,6 +138,7 @@
       data.loginType = loginTypes[0]
     }
   })
+  onShow(() => { uni.$emit('uni-admin-registration-check') })
 
 </script>
 

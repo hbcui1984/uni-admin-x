@@ -2,6 +2,7 @@ import { pages as registeredPages, subPackages } from '@/pages.json';
 
 export const accountLoginPath = '/uni_modules/uni-id-pages-x/pages/login/login';
 export const accountRegisterPath = '/uni_modules/uni-id-pages-x/pages/register/register';
+const accountAdminRegisterPath = '/uni_modules/uni-id-pages-x/pages/register/register-admin';
 const defaultRedirect = '/pages/index/index';
 const profilePrefix = '/uni_modules/uni-id-pages-x/pages/userinfo/';
 let entryRoute = '';
@@ -34,7 +35,7 @@ export function safeAccountRedirect(value: string | null): string {
   if (!target.startsWith('/') || target.startsWith('//') || /[\\\u0000-\u001f\u007f#]/.test(target)) return defaultRedirect;
   const path = target.split('?')[0];
   if (!/^\/[a-zA-Z0-9_/-]+$/.test(path)) return defaultRedirect;
-  if ([accountLoginPath, accountRegisterPath, '/uni_modules/uni-id-pages-x/pages/retrieve/retrieve'].includes(path)) return defaultRedirect;
+  if ([accountLoginPath, accountRegisterPath, accountAdminRegisterPath, '/uni_modules/uni-id-pages-x/pages/retrieve/retrieve'].includes(path)) return defaultRedirect;
   const registered = registeredPages.some(page => '/' + page.path === path) || subPackages.some(pkg => pkg.pages.some(page => '/' + pkg.root + '/' + page.path === path));
   return registered ? target : defaultRedirect;
 }
@@ -49,7 +50,7 @@ function redirectFromRoute(route: string): string | null {
 
 export function readAccountRedirect(): string | null {
   const route = webRoute();
-  if (![accountLoginPath, accountRegisterPath].includes(route.split('?')[0])) return null;
+  if (![accountLoginPath, accountRegisterPath, accountAdminRegisterPath].includes(route.split('?')[0])) return null;
   const value = redirectFromRoute(route);
   return value == null ? null : safeAccountRedirect(value);
 }
@@ -72,7 +73,7 @@ export function normalizeAccountRoute(options: Record<string, any>) {
   // #ifdef WEB
   const current = webRoute();
   const path = current.split('?')[0];
-  if (![accountLoginPath, accountRegisterPath].includes(path)) return;
+  if (![accountLoginPath, accountRegisterPath, accountAdminRegisterPath].includes(path)) return;
   const source = entryRoute.split('?')[0] === path ? entryRoute : current;
   let value = redirectFromRoute(source) ?? options['uniIdRedirectUrl'] ?? null;
   if (entryRoute.startsWith(profilePrefix)) protectedTarget = safeAccountRedirect(entryRoute);

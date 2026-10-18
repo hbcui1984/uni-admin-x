@@ -1,9 +1,5 @@
-const {
-  userCollection
-} = require('../../common/constants')
-const {
-  ERROR
-} = require('../../common/error')
+const { db } = require('../../common/constants')
+const { withFirstAdminGuard } = require('uni-admin-setup')
 const {
   preRegisterWithPassword,
   postRegister
@@ -33,25 +29,6 @@ module.exports = async function (params = {}) {
     password,
     nickname
   } = params
-  const getAdminRes = await userCollection.where({
-    role: 'admin'
-  }).limit(1).get()
-  if (getAdminRes.data.length > 0) {
-    const [admin] = getAdminRes.data
-    const appId = this.getUniversalClientInfo().appId
-
-    if (!admin.dcloud_appid || (admin.dcloud_appid && admin.dcloud_appid.includes(appId))) {
-      return {
-        errCode: ERROR.ADMIN_EXISTS,
-        errMsg: this.t('uni-id-admin-exists')
-      }
-    } else {
-      return {
-        errCode: ERROR.ADMIN_EXISTS,
-        errMsg: this.t('uni-id-admin-exist-in-other-apps')
-      }
-    }
-  }
   const {
     user,
     extraData
@@ -61,12 +38,15 @@ module.exports = async function (params = {}) {
     },
     password
   })
-  return postRegister.call(this, {
-    user,
-    extraData: {
-      ...extraData,
-      nickname,
-      role: ['admin']
-    }
+  return withFirstAdminGuard(db, 'register', async () => {
+    const result = await postRegister.call(this, {
+      user,
+      extraData: {
+        ...extraData,
+        nickname,
+        role: ['admin']
+      }
+    })
+    return result
   })
 }

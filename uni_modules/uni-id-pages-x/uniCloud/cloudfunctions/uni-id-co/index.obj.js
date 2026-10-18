@@ -17,6 +17,7 @@ const middleware = require('./middleware/index')
 const universal = require('./common/universal')
 
 const {
+  getAdminRegistrationStatus,
   registerAdmin,
   registerUser,
   registerUserByEmail
@@ -104,6 +105,13 @@ module.exports = {
   async _before () {
     // 支持 callFunction 与 URL化
     universal.call(this)
+
+    // 首任注册入口仅查询全局状态，不读取或校验来访者 token。
+    if (this.getMethodName() === 'getAdminRegistrationStatus') {
+      this.response = {}
+      await middleware.accessControl.call(this)
+      return
+    }
 
     const clientInfo = this.getUniversalClientInfo()
     /**
@@ -268,6 +276,11 @@ module.exports = {
    * @returns
    */
   registerAdmin,
+  /**
+   * 公开只读的首任管理员注册状态，零参数，不返回账号或 token 信息。
+   * @returns {Object} errCode, errMsg, hasAdmin, canRegisterAdmin, registrationBlocked
+   */
+  getAdminRegistrationStatus,
   /**
    * 新增用户
    * @tutorial https://uniapp.dcloud.net.cn/uniCloud/uni-id-pages.html#add-user

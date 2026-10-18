@@ -43,6 +43,9 @@ module.exports = async function () {
     role,
     permission
   } = methodPermission[methodName]
+  if (methodName === 'getAdminRegistrationStatus' && auth === false) {
+    return
+  }
   if (auth || role || permission) {
     await this.middleware.auth()
   }

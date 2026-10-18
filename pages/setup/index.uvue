@@ -1,0 +1,136 @@
+<template>
+  <scroll-view class="setup-page" direction="vertical">
+    <view class="setup-content">
+      <view class="setup-brand">
+        <image class="setup-logo" src="/static/logo.png" mode="aspectFit" />
+        <text class="setup-brand-title">uni-admin-x</text>
+      </view>
+      <text class="setup-title">基础菜单维护</text>
+      <view class="setup-section">
+        <text v-if="loading" class="setup-note">正在检查管理员与菜单状态…</text>
+        <text v-else-if="error.length > 0" class="setup-error">{{ error }}</text>
+        <template v-else-if="status != null">
+          <text class="setup-note">{{ menuLabel }}</text>
+          <text v-if="!status.currentUserIsAdmin" class="setup-note">当前账号没有菜单维护权限，请使用管理员账号登录。</text>
+        </template>
+        <button class="setup-button" :disabled="loading || busy || requiresRelogin" @click="refreshStatus">重新检查状态</button>
+      </view>
+      <view v-if="requiresRelogin" class="setup-section">
+        <text class="setup-note">{{ result }}</text>
+        <button class="setup-button" type="primary" @click="reloginForSetup">重新登录并刷新菜单</button>
+      </view>
+      <template v-else>
+        <view v-if="canInitialize" class="setup-section">
+          <text class="setup-note">只补齐缺失的基础菜单和权限，不覆盖现有自定义记录。</text>
+          <button class="setup-button" type="primary" :disabled="busy || loading" :loading="busy" @click="initialize">补齐基础菜单与权限</button>
+        </view>
+        <button v-if="loggedIn" class="setup-button" :disabled="busy" @click="openWorkbench">返回工作台</button>
+        <button class="setup-button" :disabled="busy" @click="reloginForSetup">返回登录</button>
+      </template>
+    </view>
+  </scroll-view>
+</template>
+
+<script setup lang="uts">
+import type { AdminSetupStatusResponse } from '@/common/admin-setup-types'
+import { getSetupStatus, setupStatusUsable, setupErrorMessage, setupIdentityKey, setupLoggedIn, initializeMenus, reloginForSetup, loginForSetup } from '@/common/admin-setup'
+import { getAdminRegistrationStatus, registrationStatusKnown, firstAdminRegistrationOpen, adminRegisterPath } from '@/common/admin-registration'
+import { accountRouteUrl } from '@/uni_modules/uni-id-pages-x/common/account-route'
+
+const status = ref<AdminSetupStatusResponse | null>(null)
+const loading = ref(false)
+const busy = ref(false)
+const error = ref('')
+const result = ref('')
+const loggedIn = ref(false)
+const requiresRelogin = ref(false)
+let generation = 0
+let active = true
+const canInitialize = computed((): boolean => setupStatusUsable(status.value) && status.value!.hasAdmin === true && status.value!.currentUserIsAdmin && !requiresRelogin.value)
+const menuLabel = computed((): string => status.value?.menuStatus == 'ready'
+  ? '基础菜单记录已齐备，现有启用状态保持不变'
+  : status.value?.menuStatus == 'partial' ? '部分基础菜单已存在，可补齐缺失项' : '基础菜单尚未初始化')
+
+function requestErrorMessage(value: unknown): string {
+  const response = value as { errCode?: number | string, code?: number | string } | null
+  return setupErrorMessage(response?.errCode ?? response?.code ?? 'SETUP_CONNECTION_ERROR')
+}
+
+async function refreshStatus() {
+  if (busy.value || requiresRelogin.value) return
+  const ticket = ++generation
+  status.value = null
+  error.value = ''
+  loading.value = true
+  try {
+    // 首次注册只看全局管理员状态，不能先要求空空间用户登录。
+    const registration = await getAdminRegistrationStatus()
+    if (!active || ticket != generation) return
+    if (!registrationStatusKnown(registration)) throw new Error('管理员状态未知')
+    if (registration.hasAdmin === false) {
+      if (firstAdminRegistrationOpen(registration)) {
+        uni.redirectTo({ url: accountRouteUrl(adminRegisterPath, '/pages/index/index') })
+      } else error.value = '首任管理员注册暂被锁定，请维护者核查注册结果。'
+      return
+    }
+    loggedIn.value = setupLoggedIn()
+    if (!loggedIn.value) { loginForSetup(); return }
+    const key = setupIdentityKey()
+    const response = await getSetupStatus()
+    if (!active || ticket != generation) return
+    if (key != setupIdentityKey()) { error.value = '登录身份已变化，请重新检查状态。'; return }
+    if (!setupStatusUsable(response)) { error.value = setupErrorMessage(response?.errCode || 'SETUP_RESPONSE_INVALID'); return }
+    if (response.hasAdmin === false) { uni.redirectTo({ url: adminRegisterPath }); return }
+    status.value = response
+  } catch (failure) {
+    if (active && ticket == generation) error.value = requestErrorMessage(failure)
+  } finally { if (ticket == generation) loading.value = false }
+}
+
+async function initialize() {
+  if (busy.value || loading.value || !canInitialize.value) return
+  const key = setupIdentityKey()
+  const ticket = generation
+  busy.value = true
+  try {
+    const confirmed = await new Promise<boolean>(resolve => uni.showModal({
+      title: '确认补齐基础菜单', content: '只新增服务器白名单中的缺失菜单和权限，不覆盖自定义记录。确定继续？',
+      success: response => resolve(response.confirm == true), fail: () => resolve(false)
+    }))
+    if (!confirmed || !active || ticket != generation || key != setupIdentityKey()) return
+    const latest = await getSetupStatus()
+    if (!active || ticket != generation || key != setupIdentityKey()) return
+    if (!setupStatusUsable(latest) || latest.currentUserIsAdmin !== true || latest.hasAdmin !== true) {
+      status.value = null; error.value = '管理员状态已变化，请重新登录后检查。'; return
+    }
+    const response = await initializeMenus()
+    status.value = null
+    if (!active || key != setupIdentityKey()) return
+    if (response.errCode !== 0) { error.value = setupErrorMessage(response.errCode); return }
+    if (typeof response.menusAdded != 'number' || typeof response.permissionsAdded != 'number') throw new Error('未知结果')
+    result.value = '新增菜单 ' + String(response.menusAdded) + ' 项，新增权限 ' + String(response.permissionsAdded) + ' 项，请重新登录刷新菜单。'
+    requiresRelogin.value = true
+  } catch (failure) {
+    status.value = null
+    error.value = requestErrorMessage(failure)
+  } finally { busy.value = false }
+}
+
+function openWorkbench() { if (!busy.value) uni.reLaunch({ url: '/pages/index/index' }) }
+onShow(() => { active = true; void refreshStatus() })
+onHide(() => { active = false; generation++ })
+onUnload(() => { active = false; generation++ })
+</script>
+
+<style>
+.setup-page { flex: 1; flex-direction: column; background-color: #f5f7fa; }
+.setup-content { flex-direction: column; width: 100%; max-width: 760px; padding: 24px; box-sizing: border-box; margin: 0 auto; }
+.setup-brand { flex-direction: row; align-items: center; margin-bottom: 24px; }
+.setup-logo { width: 36px; height: 36px; margin-right: 12px; }
+.setup-brand-title { font-size: 22px; font-weight: 700; color: #24292f; }
+.setup-title { font-size: 26px; font-weight: 700; color: #24292f; }
+.setup-section { flex-direction: column; padding: 24px 0; border-bottom: 1px solid #d8dee4; }
+.setup-note { font-size: 14px; line-height: 24px; color: #57606a; white-space: normal; }
+.setup-error { font-size: 14px; line-height: 24px; color: #b42318; white-space: normal; }
+.setup-button { margin: 16px 0 0; width: 100%; font-size: 14px; min-height: 44px; border-radius: 4px; }
+</style>
