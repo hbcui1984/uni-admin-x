@@ -1,0 +1,57 @@
+<template>
+  <view class="fix-top-window icons-page">
+    <view class="uni-header icons-header">
+      <text class="uni-title">图标（uni-icons）</text>
+      <input v-model="query" class="uni-search icons-search" placeholder="搜索图标名称" />
+    </view>
+    <view class="uni-container">
+      <view class="icons-categories">
+        <button v-for="item in categories" :key="item.value" class="icons-category" size="mini" :type="category === item.value ? 'primary' : 'default'" @click="category = item.value">{{ item.text }}</button>
+        <text class="icons-count">{{ filtered.length }} 个图标</text>
+      </view>
+      <view class="icons-grid">
+        <view v-for="icon in filtered" :key="icon" class="icon-item">
+          <button class="icon-copy" hover-class="icon-action-active" :title="'复制组件：' + icon" @click="copy('tag', icon)"><text class="icon-glyph" :class="'uni-icons-' + icon" /></button>
+          <button class="icon-name" hover-class="icon-action-active" :title="'复制类名：uni-icons-' + icon" @click="copy('class', icon)">uni-icons-{{ icon }}</button>
+        </view>
+      </view>
+      <text v-if="!filtered.length" class="icons-empty">没有匹配的图标</text>
+    </view>
+  </view>
+</template>
+
+<script setup lang="ts">
+import { computed, ref } from 'vue';
+import icons from './uni-icons.js';
+const props = defineProps({ tag: { type: Boolean, default: true }, fixWindow: { type: Boolean, default: true } });
+const query = ref('');
+const category = ref('all');
+const categories = [{ value: 'all', text: '全部' }, { value: 'outline', text: '线框' }, { value: 'filled', text: '实心' }];
+const filtered = computed(() => icons.filter((icon: string) => {
+  const filled = icon.includes('filled');
+  return (category.value === 'all' || (category.value === 'filled' ? filled : !filled)) && ('uni-icons-' + icon).includes(query.value.trim().toLowerCase());
+}));
+const copy = (type: string, icon: string) => {
+  const name = 'uni-icons-' + icon;
+  const data = props.tag && type === 'tag' ? '<view class="' + name + '"></view>' : name;
+  uni.setClipboardData({ data, success: () => uni.showToast({ title: '已复制', icon: 'none' }), fail: () => uni.showModal({ content: '复制失败，请检查剪贴板权限', showCancel: false }) });
+};
+</script>
+
+<style>
+@import '@/common/uni-icons.css';
+.icons-page { font-size: 14px; }
+.icons-header { flex-wrap: wrap; }
+.icons-search { width: 240px; box-sizing: border-box; margin-left: 12px; }
+.icons-categories { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.icons-category { margin: 0 8px 8px 0; }
+.icons-count { color: #667085; font-size: 13px; }
+.icons-grid { display: flex; flex-direction: row; flex-wrap: wrap; }
+.icon-item { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 16.666%; min-height: 120px; padding: 8px; box-sizing: border-box; }
+.icon-copy { display: flex; flex-direction: row; align-items: center; justify-content: center; width: 56px; height: 52px; padding: 0; margin: 0; background: transparent; }
+.icon-glyph { font-size: 30px; line-height: 40px; }
+.icon-name { width: 100%; font-size: 12px; line-height: 18px; white-space: normal; overflow-wrap: anywhere; color: #667085; background: transparent; padding: 6px 0; margin: 0; }
+.icon-action-active { color: #2979ff; }
+.icons-empty { display: block; text-align: center; padding: 32px 0; color: #667085; }
+@media screen and (max-width: 700px) { .icon-item { width: 33.333%; } }
+</style>

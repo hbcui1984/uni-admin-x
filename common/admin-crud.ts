@@ -4,7 +4,6 @@ import menuValidator from '@/js_sdk/validator/opendb-admin-menus.js';
 import { validator as permissionValidator } from '@/js_sdk/validator/uni-id-permissions.js';
 import { validator as roleValidator } from '@/js_sdk/validator/uni-id-roles.js';
 import { validator as userValidator, enumConverter } from '@/js_sdk/validator/uni-id-users.js';
-import originalMenuList from '@/pages/system/menu/originalMenuList.json';
 import { validator as tagValidator } from '@/js_sdk/validator/uni-id-tag.js';
 import { identity, currentRoute, LOGIN_URL } from '@/common/admin-navigation';
 
@@ -219,6 +218,7 @@ export function useAdminForm(kind: Exclude<Kind, 'app'>, editing: boolean) {
       }
       if (!checkAccess()) return;
       uni.showToast({ title: editing ? '修改成功' : '新增成功' });
+      if (kind === 'menu') uni.$emit('uni-admin-menus-changed');
       proxy.getOpenerEventChannel?.()?.emit?.('refreshData');
       if (kind === 'tag') proxy.getOpenerEventChannel?.()?.emit?.('refreshCheckboxData');
       setTimeout(() => uni.navigateBack(), 500);
@@ -444,6 +444,7 @@ export function useAdminMenuList(pluginMenuJsons: Menu[]) {
       if (!checkAccess()) return;
       const original = menus.value.find(menu => menu._id === id);
       if (original) original.enable = !item.enable;
+      uni.$emit('uni-admin-menus-changed');
     } catch (err) { reportAdminError(err); await loadData(); }
     finally { toggling.delete(id); }
   };
@@ -466,10 +467,11 @@ export function useAdminMenuList(pluginMenuJsons: Menu[]) {
       try {
         await db.collection('opendb-admin-menus').where(`_id in ${JSON.stringify(ids)}`).remove();
         await loadData();
+        uni.$emit('uni-admin-menus-changed');
       } catch (err) { reportAdminError(err); } finally { busy.value = false; }
     } });
   };
-  const addMenus = async (items: Menu[], reload = false) => {
+  const addMenus = async (items: Menu[]) => {
     const db = getDatabase();
     if (!db) return;
     if (busy.value || loading.value) return;
@@ -491,9 +493,7 @@ export function useAdminMenuList(pluginMenuJsons: Menu[]) {
       if (!checkAccess()) return;
       uni.showToast({ title: values.length ? `新增了${values.length}个菜单` : '菜单无变动', icon: 'none' });
       await loadData();
-      // #ifdef WEB
-      if (reload && values.length) setTimeout(() => window.location.reload(), 300);
-      // #endif
+      uni.$emit('uni-admin-menus-changed');
     } catch (err) { reportAdminError(err); } finally { busy.value = false; uni.hideLoading(); }
   };
   onReady(loadData);
@@ -508,6 +508,6 @@ export function useAdminMenuList(pluginMenuJsons: Menu[]) {
       if (!items.length) return reportAdminError(new Error('请选择要添加的菜单'));
       uni.showModal({ title: '提示', content: '您确认要添加已选中的菜单吗？', success: res => { if (res.confirm) addMenus(items); } });
     },
-    updateBuiltInMenu: () => uni.showModal({ title: '提示', content: '确定更新内置菜单吗？\n（该操作不会影响现有的菜单）', success: res => { if (res.confirm) addMenus(originalMenuList as Menu[], true); } }),
+    updateBuiltInMenu: () => { if (checkAccess()) uni.navigateTo({ url: '/pages/setup/index' }); },
   };
 }

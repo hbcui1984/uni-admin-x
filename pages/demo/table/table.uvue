@@ -1,0 +1,74 @@
+<template>
+  <view class="fix-top-window demo-table-page">
+    <view class="uni-header demo-table-header">
+      <text class="uni-title">表格演示</text>
+      <view class="demo-table-tools demo-header-tools">
+        <input v-model="searchVal" class="uni-search demo-table-search" placeholder="搜索姓名" @confirm="search" />
+        <button class="uni-button demo-tool-button" size="mini" @click="search">搜索</button>
+        <button class="uni-button demo-tool-button" size="mini" disabled>新增（未实现）</button>
+        <button class="uni-button demo-tool-button" size="mini" disabled>批量删除（未实现）</button>
+      </view>
+    </view>
+    <view class="uni-container">
+      <text class="demo-table-summary">静态示例数据 · 已选择 {{ selected.length }} 条</text>
+      <uni-table ref="tableRef" border stripe type="selection" emptyText="没有匹配的数据" @selection-change="selectionChange">
+        <uni-tr>
+          <uni-th width="150" align="center" sortable @sort-change="sortChange($event, 'date')">日期</uni-th>
+          <uni-th width="150" align="center" sortable @sort-change="sortChange($event, 'name')">姓名</uni-th>
+          <uni-th align="center">地址</uni-th><uni-th width="240" align="center">设置</uni-th>
+        </uni-tr>
+        <uni-tr v-for="item in tableData" :key="item.id">
+          <uni-td>{{ item.date }}</uni-td><uni-td>{{ item.name }}</uni-td><uni-td>{{ item.address }}</uni-td>
+          <uni-td><view class="demo-table-tools"><button class="demo-tool-button" size="mini" disabled>编辑（未实现）</button><button class="demo-tool-button" size="mini" disabled>删除（未实现）</button></view></uni-td>
+        </uni-tr>
+      </uni-table>
+      <view class="uni-pagination-box demo-table-pagination">
+        <uni-pagination show-icon show-page-size :page-size-range="[10, 20, 50]" :page-size="pageSize" :current="pageCurrent" :total="filtered.length" @change="changePage" @pageSizeChange="changeSize" />
+      </view>
+    </view>
+  </view>
+</template>
+
+<script setup lang="ts">
+import { computed, ref } from 'vue';
+import source from './tableData.js';
+type DemoRow = { id: number; date: string; name: string; address: string };
+const data: DemoRow[] = source.map((item, index) => ({ ...item, id: index }));
+const searchVal = ref('');
+const appliedQuery = ref('');
+const pageSize = ref(10);
+const pageCurrent = ref(1);
+const selected = ref<number[]>([]);
+const sortField = ref('');
+const sortOrder = ref('');
+const tableRef = ref<{ clearSelection(): void } | null>(null);
+const filtered = computed(() => {
+  const result = data.filter(item => item.name.toLowerCase().includes(appliedQuery.value.toLowerCase()));
+  if (sortField.value && sortOrder.value) result.sort((a, b) => {
+    const field = sortField.value as 'date' | 'name';
+    return a[field].localeCompare(b[field], undefined, { numeric: true }) * (sortOrder.value === 'ascending' ? 1 : -1);
+  });
+  return result;
+});
+const tableData = computed(() => filtered.value.slice((pageCurrent.value - 1) * pageSize.value, pageCurrent.value * pageSize.value));
+const clearSelection = () => { selected.value = []; tableRef.value?.clearSelection(); };
+const selectionChange = (event: { detail: { index: number[] } }) => { selected.value = event.detail.index; };
+const search = () => { clearSelection(); appliedQuery.value = searchVal.value.trim(); pageCurrent.value = 1; };
+const changePage = (event: { current: number }) => { clearSelection(); pageCurrent.value = event.current; };
+const changeSize = (size: number) => { clearSelection(); pageSize.value = [10, 20, 50].includes(Number(size)) ? Number(size) : 10; pageCurrent.value = 1; };
+const sortChange = (event: { order: string }, field: string) => { clearSelection(); sortField.value = field; sortOrder.value = event.order; pageCurrent.value = 1; };
+</script>
+
+<style>
+.demo-table-page { font-size: 14px; }
+.demo-table-header { flex-wrap: wrap; }
+.demo-table-tools { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; }
+.demo-tool-button { margin: 4px 8px 4px 0; }
+.demo-table-search { width: 200px; box-sizing: border-box; margin-right: 8px; }
+.demo-table-summary { display: block; margin-bottom: 12px; color: #667085; font-size: 13px; }
+.demo-table-pagination { overflow-x: auto; }
+@media screen and (max-width: 700px) {
+  .demo-table-header { height: auto; align-items: flex-start; }
+  .demo-header-tools { width: 100%; }
+}
+</style>

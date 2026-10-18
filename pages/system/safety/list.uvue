@@ -1,0 +1,96 @@
+<template>
+  <view v-if="accessReady" class="fix-top-window safety-page">
+    <view class="uni-header safety-header">
+      <uni-stat-breadcrumb class="uni-stat-breadcrumb-on-phone" />
+      <view class="safety-search">
+        <input v-model="query" class="uni-search safety-input" placeholder="搜索用户名、昵称、类型或 IP" @confirm="search" />
+        <button class="uni-button" size="mini" :disabled="loading" @click="search">搜索</button>
+      </view>
+    </view>
+    <view class="uni-container">
+      <view v-if="error" class="safety-error">
+        <text>{{ error }}</text>
+        <button class="safety-retry" size="mini" :disabled="loading" @click="loadData">重试</button>
+      </view>
+      <uni-table :loading="loading" :emptyText="error || '暂无用户日志'" border stripe>
+        <uni-tr>
+          <uni-th align="center" width="70">序号</uni-th>
+          <uni-th align="center">用户名</uni-th><uni-th align="center">昵称</uni-th>
+          <uni-th align="center">内容</uni-th><uni-th align="center">IP</uni-th><uni-th align="center" width="180">时间</uni-th>
+        </uni-tr>
+        <uni-tr v-for="(item, index) in rows" :key="item._id">
+          <uni-td align="center">{{ (current - 1) * pageSize + index + 1 }}</uni-td>
+          <uni-td align="center">{{ item.user_id?.[0]?.username || '-' }}</uni-td>
+          <uni-td align="center">{{ item.user_id?.[0]?.nickname || '-' }}</uni-td>
+          <uni-td align="center">{{ item.type || '-' }}</uni-td><uni-td align="center">{{ item.ip || '-' }}</uni-td>
+          <uni-td align="center"><uni-dateformat v-if="item.create_date" :date="item.create_date" :threshold="[0, 0]" /><text v-else>-</text></uni-td>
+        </uni-tr>
+      </uni-table>
+      <view class="uni-pagination-box safety-pagination">
+        <uni-pagination show-icon show-page-size :page-size="pageSize" :current="current" :total="total" @change="changePage" @pageSizeChange="changeSize" />
+      </view>
+    </view>
+  </view>
+</template>
+
+<script setup lang="ts">
+import { ref, watch } from 'vue';
+import { onReady, onShow } from '@dcloudio/uni-app';
+import { useAdminAccess, adminWhere } from '@/common/admin-crud';
+
+type LogRow = { _id: string; user_id?: { username?: string; nickname?: string }[]; type?: string; ip?: string; create_date?: number };
+const { accessReady, checkAccess, getDatabase } = useAdminAccess();
+const rows = ref<LogRow[]>([]);
+const query = ref('');
+const where = ref('');
+const current = ref(1);
+const pageSize = ref(20);
+const total = ref(0);
+const loading = ref(false);
+const error = ref('');
+let requestId = 0;
+let ready = false;
+const loadData = async () => {
+  const id = ++requestId;
+  const db = getDatabase();
+  if (!db) { rows.value = []; total.value = 0; loading.value = false; return; }
+  loading.value = true;
+  error.value = '';
+  rows.value = [];
+  try {
+    const logs = db.collection('uni-id-log').field('type,ip,create_date,user_id').getTemp();
+    const users = db.collection('uni-id-users').field('_id,username,nickname').getTemp();
+    const result = await db.collection(logs, users).where(where.value).orderBy('create_date desc')
+      .skip((current.value - 1) * pageSize.value).limit(pageSize.value).get({ getCount: true });
+    if (id !== requestId || !checkAccess()) return;
+    rows.value = result.data as LogRow[];
+    total.value = result.count || 0;
+  } catch (_) {
+    if (id === requestId && checkAccess()) {
+      rows.value = []; total.value = 0;
+      error.value = '日志加载失败，请检查读取权限或网络后重试';
+    }
+  } finally { if (id === requestId) loading.value = false; }
+};
+const search = () => {
+  where.value = adminWhere(query.value, ['user_id.username', 'user_id.nickname', 'type', 'ip']);
+  current.value = 1;
+  loadData();
+};
+const changePage = (event: { current: number }) => { current.value = event.current; loadData(); };
+const changeSize = (size: number) => { pageSize.value = Math.max(1, Math.min(500, Number(size) || 20)); current.value = 1; loadData(); };
+watch(accessReady, value => { if (!value) { requestId++; rows.value = []; total.value = 0; loading.value = false; } });
+onReady(() => { ready = true; loadData(); });
+onShow(() => { if (ready) loadData(); });
+</script>
+
+<style>
+.safety-page { font-size: 14px; }
+.safety-header { flex-wrap: wrap; }
+.safety-search { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; }
+.safety-input { width: 280px; box-sizing: border-box; margin-right: 8px; }
+.safety-error { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; padding: 12px 0; color: #b42318; }
+.safety-retry { margin-left: 12px; }
+.safety-pagination { overflow-x: auto; }
+@media screen and (max-width: 500px) { .safety-input { width: 220px; } }
+</style>

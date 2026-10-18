@@ -7,6 +7,9 @@
     { "path": "pages/index/index", "needLogin": true, "style": { "navigationBarTitleText": "首页" } },
     { "path": "pages/error/404", "style": { "navigationBarTitleText": "页面不存在" } },
     { "path": "pages/setup/index", "style": { "navigationBarTitleText": "基础菜单维护", "topWindow": false, "leftWindow": false } },
+    { "path": "pages/account/change-password", "needLogin": true, "style": { "navigationBarTitleText": "修改密码" } },
+    { "path": "pages/demo/icons/icons", "needLogin": true, "style": { "navigationBarTitleText": "图标演示" } },
+    { "path": "pages/demo/table/table", "needLogin": true, "style": { "navigationBarTitleText": "表格演示" } },
     { "path": "uni_modules/uni-id-pages-x/pages/login/login", "style": { "navigationBarTitleText": "登录", "topWindow": false, "leftWindow": false } },
     { "path": "uni_modules/uni-id-pages-x/pages/register/register", "style": { "navigationBarTitleText": "注册", "topWindow": false, "leftWindow": false } },
     { "path": "uni_modules/uni-id-pages-x/pages/register/register-admin", "style": { "navigationBarTitleText": "注册超级管理员", "topWindow": false, "leftWindow": false } },
@@ -37,7 +40,9 @@
         { "path": "tag/list", "style": { "navigationBarTitleText": "标签管理" } },
         { "path": "tag/add", "style": { "navigationBarTitleText": "新增标签" } },
         { "path": "tag/edit", "style": { "navigationBarTitleText": "修改标签" } },
-        { "path": "app/list", "style": { "navigationBarTitleText": "应用列表" } }
+        { "path": "safety/list", "style": { "navigationBarTitleText": "用户日志" } },
+        { "path": "app/list", "style": { "navigationBarTitleText": "应用列表" } },
+        { "path": "app/add", "style": { "navigationBarTitleText": "应用信息" } }
       ]
     }
   ],

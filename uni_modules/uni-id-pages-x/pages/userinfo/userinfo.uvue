@@ -24,12 +24,21 @@
 					<uni-id-pages-x-icons :size="16" type="right-arrow" class="link-icon"></uni-id-pages-x-icons>
 				</view>
 			</view>
+			<view class="item" v-if="userInfo['email'] != null && userInfo['email'] != ''">
+				<text class="item-title">邮箱</text>
+				<text class="item-value">{{ userInfo['email'] }}</text>
+			</view>
+			<view class="item" @click="changePassword">
+				<text class="item-title">修改密码</text>
+				<uni-id-pages-x-icons :size="16" type="right-arrow" class="link-icon" />
+			</view>
 		</view>
 		<view class="list">
-			<view @click="deactivate" class="item deactivate-item">
+			<view v-if="allowAccountDeactivation" @click="deactivate" class="item deactivate-item">
 				<text class="item-title">注销账号</text>
 				<uni-id-pages-x-icons :size="16" type="right-arrow" class="link-icon"></uni-id-pages-x-icons>
 			</view>
+			<view v-else class="item"><text class="item-title">注销账号（暂未开放）</text></view>
 			<view class="item"  v-if="isLogin && showLoginManage" @click="logout">
 				<text class="item-title">退出登录</text>
 				<uni-id-pages-x-icons :size="16" type="right-arrow" class="link-icon"></uni-id-pages-x-icons>
@@ -40,8 +49,6 @@
 			<!-- <button v-if="isLogin" @click="logout" class="logout">退出登录</button> -->
 			<button v-if="!isLogin" @click="login" type="primary" class="login">去登录</button>
 		</view>
-		<!-- 弹出对话框组件 -->
-		<uni-id-pages-x-popup-dialog ref="popup-dialog" />
 	</view>
 </template>
 
@@ -54,6 +61,7 @@
 	const accessReady = ref(false)
 	let accessTarget = '/uni_modules/uni-id-pages-x/pages/userinfo/userinfo'
 	const smsEnabled = config.getBoolean('smsEnabled') == true
+	const allowAccountDeactivation = config.getBoolean('allowAccountDeactivation') == true
 
 	const showLoginManage = ref(true)
 
@@ -107,12 +115,16 @@
 	}
 
 	function deactivate() {
+		if (!allowAccountDeactivation) return
 		uni.navigateTo({
 			url: "/uni_modules/uni-id-pages-x/pages/userinfo/deactivate/deactivate",
 			complete(_) {
 				// console.log('e', e);
 			}
 		})
+	}
+	function changePassword() {
+		uni.navigateTo({ url: '/pages/account/change-password' })
 	}
 
 	function logout() {

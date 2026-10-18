@@ -5,7 +5,8 @@
       <view class="uni-group">
         <input class="uni-search" type="text" v-model="query" @confirm="search" :placeholder="$t('common.placeholder.query')" />
         <button class="uni-button hide-on-phone" type="default" size="mini" @click="search">{{ $t('common.button.search') }}</button>
-        <button class="uni-button" type="primary" size="mini" @click="unavailable('应用新增')">{{ $t('common.button.add') }}</button>
+        <button class="uni-button" type="primary" size="mini" :disabled="!hasPermission('CREATE_OPENDB_APP_LIST')" @click="navigateTo('/pages/system/app/add')">{{ $t('common.button.add') }}</button>
+        <button class="uni-button" size="mini" :disabled="!hasPermission('CREATE_OPENDB_APP_LIST')" @click="registerCurrent">登记当前后台</button>
         <button class="uni-button" type="warn" size="mini" :disabled="!selectedIndexs.length" @click="delTable">{{ $t('common.button.batchDelete') }}</button>
       </view>
     </view>
@@ -80,12 +81,12 @@
 								-
 							</view> -->
               <view class="uni-group">
-                <button @click="unavailable('应用发布')" class="uni-button" size="mini" type="primary">{{ $t('common.button.publish') }}</button>
-                <button @click="unavailable('版本管理')" class="uni-button" size="mini" type="primary">
-                  {{ $t('common.button.version') }}
+                <button disabled title="uni-portal 尚未迁移" class="uni-button" size="mini">{{ $t('common.button.publish') }}（未迁移）</button>
+                <button disabled title="uni-upgrade-center 尚未迁移" class="uni-button" size="mini">
+                  {{ $t('common.button.version') }}（未迁移）
                 </button>
-                <button @click="unavailable('应用编辑')" class="uni-button" size="mini" type="primary">{{ $t('common.button.edit') }}</button>
-                <button @click="confirmDelete(item._id)" class="uni-button" size="mini" type="warn">{{ $t('common.button.delete') }}</button>
+                 <button :disabled="!hasPermission('UPDATE_OPENDB_APP_LIST')" @click="navigateTo('/pages/system/app/add?id=' + encodeURIComponent(item.appid), false)" class="uni-button" size="mini" type="primary">{{ $t('common.button.edit') }}</button>
+                 <button @click="confirmDelete(item._id)" :disabled="item.appid === appid" class="uni-button" size="mini" type="warn">{{ $t('common.button.delete') }}</button>
               </view>
             </uni-td>
           </uni-tr>
@@ -113,13 +114,51 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useStore } from 'vuex';
-import { useAdminList } from '@/common/admin-crud';
+import { useAdminList, reportAdminError } from '@/common/admin-crud';
+import { hasPermission, identity } from '@/common/admin-navigation';
 const store = useStore();
 const appid = computed(() => store.state.app.appid);
 const appTypeData = [{ text: 'uni-app', value: 0 }, { text: 'uni-app x', value: 1 }];
 const getAppType = (value = 0) => ['uni-app', 'uni-app x'][value] || '未知类型';
-const unavailable = (feature: string) => uni.showToast({ title: feature + '暂未接入', icon: 'none' });
-const { accessReady, query, where, orderby, options, udbRef, tableRef, selectedIndexs, onqueryload, search, changeSize: pageSizeChange, onPageChanged, selectionChange, delTable, confirmDelete, sortChange, filterChange } = useAdminList('app');
+const { accessReady, query, where, orderby, options, udbRef, tableRef, selectedIndexs, onqueryload, search, changeSize: pageSizeChange, onPageChanged, selectionChange, delTable: removeSelected, confirmDelete: removeOne, loadData, sortChange, filterChange } = useAdminList('app');
+function navigateTo(url: string, clear = true) {
+  if (!accessReady.value || !hasPermission(url.includes('?id=') ? 'UPDATE_OPENDB_APP_LIST' : 'CREATE_OPENDB_APP_LIST')) return;
+  const uid = identity().uid;
+  const token = uni.getStorageSync('uni_id_token');
+  const sameOwner = () => identity().uid === uid && uni.getStorageSync('uni_id_token') === token;
+  uni.navigateTo({
+    url,
+    events: { refreshData: () => { if (sameOwner()) loadData(clear); } },
+    fail: () => { if (sameOwner()) uni.showToast({ title: '目标页面暂不可用，请检查路由注册', icon: 'none' }); }
+  });
+}
+function registerCurrent() {
+  if (!accessReady.value || !hasPermission('CREATE_OPENDB_APP_LIST')) return;
+  const uid = identity().uid;
+  const token = uni.getStorageSync('uni_id_token');
+  uni.showModal({
+    title: '登记当前后台应用',
+    content: '确认打开当前后台应用的登记表单？核对信息并点击保存后才会写入数据库；已登记的应用请使用修改。',
+    success: result => {
+      if (result.confirm && identity().uid === uid && uni.getStorageSync('uni_id_token') === token
+        && hasPermission('CREATE_OPENDB_APP_LIST')) navigateTo('/pages/system/app/add?current=1');
+    }
+  });
+}
+const canDelete = (ids: string[]) => {
+  if (!hasPermission('DELETE_OPENDB_APP_LIST')) { reportAdminError(new Error('无权删除应用')); return false; }
+  const rows = udbRef.value?.dataList || [];
+  if (ids.some(id => !rows.some(row => row._id === id) || rows.some(row => row._id === id && row.appid === appid.value))) {
+    reportAdminError(new Error('不能删除当前后台应用或未加载的应用'));
+    return false;
+  }
+  return true;
+};
+const confirmDelete = (id: string) => { if (canDelete([id])) removeOne(id); };
+const delTable = () => {
+  const ids = selectedIndexs.value.map(index => udbRef.value?.dataList?.[index]?._id).filter(Boolean);
+  if (canDelete(ids)) removeSelected();
+};
 </script>
 
 <style></style>

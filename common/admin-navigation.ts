@@ -11,7 +11,13 @@ export const coreEntries = [
   { name: '权限管理', module: 'permission', icon: 'locked', permissions: ['READ_UNI_ID_PERMISSIONS'] },
   { name: '菜单管理', module: 'menu', icon: 'list', permissions: ['CREATE_OPENDB_ADMIN_MENUS', 'UPDATE_OPENDB_ADMIN_MENUS', 'DELETE_OPENDB_ADMIN_MENUS'] },
   { name: '标签管理', module: 'tag', icon: 'tag', permissions: ['READ_UNI_ID_TAG'] },
-  { name: '应用列表', module: 'app', icon: 'apps', permissions: ['READ_OPENDB_APP_LIST'] }
+  { name: '应用列表', module: 'app', icon: 'grid', permissions: ['READ_OPENDB_APP_LIST'] },
+  { name: '用户日志', module: 'safety', icon: 'info', permissions: ['READ_UNI_ID_LOG'] }
+]
+
+export const demoEntries = [
+  { name: '图标演示', url: '/pages/demo/icons/icons', icon: 'star' },
+  { name: '表格演示', url: '/pages/demo/table/table', icon: 'list' }
 ]
 
 export type AdminMenu = {
@@ -34,8 +40,8 @@ export function normalizeRoute(url: string): string {
 
 export function isAdminRoute(url: string): boolean {
   const path = normalizeRoute(url)
-  return path === HOME_URL || coreEntries.some(entry =>
-    (entry.module === 'app' ? ['list'] : ['list', 'add', 'edit']).some(action => path === `/pages/system/${entry.module}/${action}`))
+  return path === HOME_URL || demoEntries.some(entry => entry.url === path) || coreEntries.some(entry =>
+    (entry.module === 'app' ? ['list', 'add'] : entry.module === 'safety' ? ['list'] : ['list', 'add', 'edit']).some(action => path === `/pages/system/${entry.module}/${action}`))
 }
 
 export function currentRoute(): string {
@@ -162,18 +168,21 @@ export function navigateAdmin(url: string) {
 export function useAdminNavigation(store: any) {
   let timer: ReturnType<typeof setInterval> | undefined
   const refresh = () => { void loadAdminMenus(store) }
+  const changed = () => { void loadAdminMenus(store, true) }
   const stop = watch(() => [account.isLogin, account.userInfo], refresh, { deep: true })
   onMounted(() => {
     refresh()
     timer = setInterval(refresh, 1000)
     uni.$on('uni-id-pages-x-login-success', refresh)
     uni.$on('uni-id-pages-x-logout', refresh)
+    uni.$on('uni-admin-menus-changed', changed)
   })
   onUnmounted(() => {
     stop()
     if (timer !== undefined) clearInterval(timer)
     uni.$off('uni-id-pages-x-login-success', refresh)
     uni.$off('uni-id-pages-x-logout', refresh)
+    uni.$off('uni-admin-menus-changed', changed)
   })
   const entries = computed(() => {
     navigation.revision

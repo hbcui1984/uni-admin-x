@@ -22,6 +22,13 @@
         </button>
         <text v-if="!visibleRows.length" class="sidebar-message">{{ navigation.status === 'empty' ? '尚无已启用菜单，请管理员确认菜单数据已初始化。' : '暂无可访问的已迁移菜单，请联系管理员分配权限。' }}</text>
       </template>
+      <template v-if="navigation.loggedIn">
+        <text class="sidebar-group-title">组件示例</text>
+        <button v-for="entry in demoEntries" :key="entry.url" class="menu-row" :class="{ 'menu-active': active === entry.url }" @click="navigateAdmin(entry.url)">
+          <uni-icons :type="entry.icon" :size="18" :color="active === entry.url ? '#2979ff' : '#909399'" />
+          <text class="menu-label" :class="{ 'label-active': active === entry.url }">{{ entry.name }}</text>
+        </button>
+      </template>
     </view>
   </scroll-view>
 </template>
@@ -30,7 +37,7 @@
 import { computed, getCurrentInstance, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import uniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.vue'
-import { HOME_URL, coreEntries, currentRoute, normalizeRoute, navigateAdmin, useAdminNavigation } from '@/common/admin-navigation'
+import { HOME_URL, coreEntries, demoEntries, currentRoute, normalizeRoute, navigateAdmin, useAdminNavigation } from '@/common/admin-navigation'
 import type { AdminMenu } from '@/common/admin-navigation'
 
 type MenuRow = AdminMenu & { depth: number }
@@ -84,10 +91,16 @@ function syncRoute(path?: string) {
   if (!family.length && active.value !== HOME_URL) {
     const entry = coreEntries.find(item => active.value.startsWith(`/pages/system/${item.module}/`))
     if (entry) routes.push({ name: entry.name })
-    else routes.push({ name: active.value === '/pages/error/404' ? '页面不存在' : '个人资料' })
+    else {
+      const demo = demoEntries.find(item => item.url === active.value)
+      routes.push({ name: demo?.name || (active.value === '/pages/error/404' ? '页面不存在' : active.value === '/pages/account/change-password' ? '修改密码' : '个人资料') })
+    }
   }
   const action = active.value.split('/').pop()
-  if (action === 'add' || action === 'edit') routes.push({ name: action === 'add' ? '新增' : '编辑' })
+  if (action === 'add' || action === 'edit') {
+    const editingApp = active.value === '/pages/system/app/add' && (proxy?.$route?.query?.id != null || proxy?.$route?.query?.appid != null)
+    routes.push({ name: action === 'edit' || editingApp ? '编辑' : '新增' })
+  }
   store.commit('app/SET_ROUTES', routes)
 }
 watch(() => proxy?.$route?.fullPath, path => syncRoute(path), { immediate: true })
@@ -118,4 +131,5 @@ onUnmounted(() => { if (routeTimer !== undefined) clearInterval(routeTimer) })
 .error-detail { margin: 0 20px 12px; font-size: 12px; color: #c45656; line-height: 20px; overflow-wrap: anywhere; }
 .retry-button { display: flex; flex-direction: row; align-items: center; justify-content: center; margin: 0 20px; padding: 0 12px; height: 32px; background-color: #ffffff; border: 1px solid #dcdfe6; border-radius: 4px; }
 .retry-label { margin-left: 6px; font-size: 13px; color: #2979ff; }
+.sidebar-group-title { margin: 20px 20px 8px; font-size: 12px; line-height: 20px; color: #909399; }
 </style>
