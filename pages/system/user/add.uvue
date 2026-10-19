@@ -32,7 +32,7 @@
         <switch @change="binddata('status', $event.detail.value)" :checked="formData.status === 0" />
       </uni-forms-item>
       <view class="uni-button-group">
-        <button style="width: 100px" type="primary" class="uni-button" :disabled="submitting || !detailReady" :loading="submitting" @click="submitForm">{{ $t('common.button.submit') }}</button>
+        <button style="width: 100px" type="primary" class="uni-button" :disabled="submitting || !detailReady || !canSubmit()" :loading="submitting" @click="submitForm">{{ $t('common.button.submit') }}</button>
         <navigator open-type="navigateBack" style="margin-left: 15px"
           ><button style="width: 100px" class="uni-button">{{ $t('common.button.back') }}</button></navigator
         >
@@ -43,7 +43,7 @@
 
 <script setup lang="ts">
 import { useAdminForm } from '@/common/admin-crud';
-const { accessReady, formData, formRef, rules, roles, appList, tagChoices, submitting, detailReady, binddata, submitForm, gotoAppList, gotoTagList, gotoTagAdd } = useAdminForm('user', false);
+const { accessReady, formData, formRef, rules, roles, appList, tagChoices, submitting, detailReady, binddata, submitForm, canSubmit, gotoAppList, gotoTagList, gotoTagAdd } = useAdminForm('user', false);
 </script>
 <style>
   .uni-forms-item__label {

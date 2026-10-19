@@ -80,7 +80,7 @@
 
 <script setup lang="ts">
 import { useAdminList } from '@/common/admin-crud';
-const { accessReady, query, where, orderby, options, udbRef, tableRef, tagsPopupRef, batchSmsRef, selectedIndexs, collectionList, exportExcel, exportExcelData, managerTags, smsCondition, managerMultiTag, tagsData, smsReceiver, noAppidWhatShouldIDoLink, openTagsPopup, onqueryload, loadData, search, changeSize, onPageChanged, selectionChange, navigateTo, delTable, confirmDelete, sortChange, filterChange } = useAdminList('permission');
+const { accessReady, query, where, orderby, options, udbRef, tableRef, batchSmsRef, selectedIndexs, collectionList, exportExcel, exportExcelData, managerTags, smsCondition, managerMultiTag, tagsData, smsReceiver, noAppidWhatShouldIDoLink, openTagsPopup, onqueryload, loadData, search, changeSize, onPageChanged, selectionChange, navigateTo, delTable, confirmDelete, sortChange, filterChange } = useAdminList('permission');
 </script>
 
 <style></style>

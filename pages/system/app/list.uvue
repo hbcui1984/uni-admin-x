@@ -120,7 +120,7 @@ const store = useStore();
 const appid = computed(() => store.state.app.appid);
 const appTypeData = [{ text: 'uni-app', value: 0 }, { text: 'uni-app x', value: 1 }];
 const getAppType = (value = 0) => ['uni-app', 'uni-app x'][value] || '未知类型';
-const { accessReady, query, where, orderby, options, udbRef, tableRef, selectedIndexs, onqueryload, search, changeSize: pageSizeChange, onPageChanged, selectionChange, delTable: removeSelected, confirmDelete: removeOne, loadData, sortChange, filterChange } = useAdminList('app');
+const { accessReady, query, where, orderby, options, udbRef, tableRef, selectedIndexs, pageRows, onqueryload, search, changeSize: pageSizeChange, onPageChanged, selectionChange, delTable: removeSelected, confirmDelete: removeOne, loadData, sortChange, filterChange } = useAdminList('app');
 function navigateTo(url: string, clear = true) {
   if (!accessReady.value || !hasPermission(url.includes('?id=') ? 'UPDATE_OPENDB_APP_LIST' : 'CREATE_OPENDB_APP_LIST')) return;
   const uid = identity().uid;
@@ -147,7 +147,7 @@ function registerCurrent() {
 }
 const canDelete = (ids: string[]) => {
   if (!hasPermission('DELETE_OPENDB_APP_LIST')) { reportAdminError(new Error('无权删除应用')); return false; }
-  const rows = udbRef.value?.dataList || [];
+  const rows = pageRows.value;
   if (ids.some(id => !rows.some(row => row._id === id) || rows.some(row => row._id === id && row.appid === appid.value))) {
     reportAdminError(new Error('不能删除当前后台应用或未加载的应用'));
     return false;

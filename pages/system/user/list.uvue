@@ -5,9 +5,9 @@
       <view class="uni-group">
         <input class="uni-search" type="text" v-model="query" @confirm="search" :placeholder="$t('common.placeholder.query')" />
         <button class="uni-button hide-on-phone" type="default" size="mini" @click="search">{{ $t('common.button.search') }}</button>
-        <button class="uni-button" type="primary" size="mini" @click="navigateTo('./add')">{{ $t('common.button.add') }}</button>
-        <button class="uni-button" type="warn" size="mini" :disabled="!selectedIndexs.length" @click="delTable">{{ $t('common.button.batchDelete') }}</button>
-        <button class="uni-button" type="primary" size="mini" :disabled="!selectedIndexs.length" @click="openTagsPopup">{{ $t('common.button.tagManager') }}</button>
+        <button class="uni-button" type="primary" size="mini" :disabled="!canWriteUsers()" @click="navigateTo('./add')">{{ $t('common.button.add') }}</button>
+        <button class="uni-button" type="warn" size="mini" :disabled="!canDeleteSelectedUsers" title="不能批量删除包含当前登录账号的记录" @click="delTable">{{ $t('common.button.batchDelete') }}</button>
+        <button class="uni-button" type="primary" size="mini" :disabled="!canManageSelectedTags" @click="openTagsPopup">{{ $t('common.button.tagManager') }}</button>
         <!-- #ifdef H5 -->
         <button class="uni-button" type="primary" size="mini" disabled title="短信任务调度尚未完成安全联调">{{ $t('common.button.sendSMS') }}（待联调）</button>
         <download-excel class="hide-on-phone" :fields="exportExcel.fields" :data="exportExcelData" :type="exportExcel.type" :name="exportExcel.filename">
@@ -47,7 +47,7 @@
             <uni-th align="center">操作</uni-th>
           </uni-tr>
           <uni-tr v-for="(item, index) in data" :key="index">
-            <uni-td align="center">{{ item.username }}</uni-td>
+            <uni-td align="center"><text class="user-name">{{ item.username }}</text><text v-if="isCurrentUser(item._id)" class="current-user-label">当前账号</text></uni-td>
             <uni-td align="center">{{ item.nickname }}</uni-td>
             <uni-td align="center">{{ item.mobile }}</uni-td>
             <uni-td align="center">{{ options.status_valuetotext[item.status] }}</uni-td>
@@ -69,8 +69,8 @@
             </uni-td>
             <uni-td align="center">
               <view class="uni-group">
-                <button @click="navigateTo('./edit?id=' + item._id, false)" class="uni-button" size="mini" type="primary">{{ $t('common.button.edit') }}</button>
-                <button @click="confirmDelete(item._id)" class="uni-button" size="mini" type="warn">{{ $t('common.button.delete') }}</button>
+                <button :disabled="!canWriteUsers()" @click="navigateTo('./edit?id=' + item._id, false)" class="uni-button" size="mini" type="primary">{{ $t('common.button.edit') }}</button>
+                <button :disabled="!canDeleteUser(item._id) || busy" :title="isCurrentUser(item._id) ? '不能删除当前登录账号' : '删除用户'" @click="confirmDelete(item._id)" class="uni-button" size="mini" type="warn">{{ $t('common.button.delete') }}</button>
               </view>
             </uni-td>
           </uni-tr>
@@ -91,15 +91,45 @@
     <!-- #ifndef H5 -->
     <fix-window />
     <!-- #endif -->
-    <uni-popup ref="tagsPopupRef" type="center">
-      <view class="tags-manager--x">
-        <view class="tags-manager--header mb">管理标签</view>
-        <uni-data-checkbox v-model="managerTags" class="mb ml" :multiple="true" :localdata="tagChoices"></uni-data-checkbox>
-        <view class="uni-group">
-          <button @click="managerMultiTag" class="uni-button" type="primary" style="margin-right: 75px">保存</button>
+    <page-container :show="tagsDialogOpen" position="center" :overlay="true"
+      overlay-style="background-color: transparent;" :custom-style="tagsContainerStyle" @clickoverlay="closeTagsPopup" @afterleave="closeTagsPopup">
+      <view class="tags-backdrop" @click="closeTagsPopup" @keydown.esc.stop.prevent="closeTagsPopup">
+        <view class="tags-dialog" role="dialog" aria-modal="true" aria-label="管理用户标签" @click.stop>
+          <view class="tags-header">
+            <text class="tags-title">管理标签</text>
+            <button class="tags-close" title="关闭标签管理" aria-label="关闭标签管理" :disabled="busy" @click="closeTagsPopup"><uni-icons type="closeempty" :size="22" color="#606266" /></button>
+          </view>
+          <text class="tags-summary">已选择 {{ tagTargetIds.length }} 位用户</text>
+          <text class="tags-field-label">可选标签</text>
+          <text v-if="tagsLoading" class="tags-state">正在加载标签…</text>
+          <view v-else-if="tagsError" class="tags-empty">
+            <text class="tags-error">{{ tagsError }}</text>
+            <button class="tags-secondary" size="mini" @click="retryTags">重新加载</button>
+          </view>
+          <view v-else-if="!tagChoices.length" class="tags-empty">
+            <text class="tags-state">暂无可选标签</text>
+            <button v-if="hasPermission('CREATE_UNI_ID_TAG')" class="tags-secondary" size="mini" @click="addTagFromDialog">新增标签</button>
+          </view>
+          <scroll-view v-else class="tags-options" scroll-y :style="{ height: Math.min(240, tagChoices.length * 44) + 'px' }">
+            <checkbox-group @change="changeManagedTags">
+              <label v-for="option in tagChoices" :key="option.value" class="tags-option">
+                <checkbox class="tags-checkbox" :value="option.value" :checked="managerTags.includes(option.value)" :disabled="busy"
+                  role="checkbox" :aria-label="option.text" :aria-checked="managerTags.includes(option.value)" tabindex="0" @keydown.space.prevent="toggleManagedTag(option.value)" />
+                <text class="tags-option-text">{{ option.text }}</text>
+              </label>
+            </checkbox-group>
+          </scroll-view>
+          <text class="tags-warning">保存将替换所选用户的现有标签。</text>
+          <view class="tags-actions">
+            <button class="tags-clear" :disabled="busy || tagsLoading || !!tagsError" @click="managerMultiTag(true)">清空标签</button>
+            <view class="tags-action-end">
+              <button class="tags-secondary" :disabled="busy" @click="closeTagsPopup">取消</button>
+              <button class="tags-save" type="primary" :loading="busy" :disabled="busy || tagsLoading || !!tagsError || !managerTags.length" @click="managerMultiTag(false)">保存标签</button>
+            </view>
+          </view>
         </view>
       </view>
-    </uni-popup>
+    </page-container>
     <!-- #ifdef H5 -->
     <batch-sms v-if="false" ref="batchSmsRef" toType="user" :receiver="smsReceiver" :condition="smsCondition"></batch-sms>
     <!-- #endif -->
@@ -108,28 +138,37 @@
 
 <script setup lang="ts">
 import { useAdminList } from '@/common/admin-crud';
-const { accessReady, query, where, orderby, options, udbRef, tableRef, tagsPopupRef, batchSmsRef, selectedIndexs, collectionList, exportExcel, exportExcelData, managerTags, smsCondition, managerMultiTag, tagChoices, tagsData, smsReceiver, noAppidWhatShouldIDoLink, openTagsPopup, onqueryload, search, changeSize, onPageChanged, selectionChange, navigateTo, delTable, confirmDelete, sortChange, filterChange } = useAdminList('user');
+import { hasPermission } from '@/common/admin-navigation';
+const { accessReady, query, where, orderby, options, udbRef, tableRef, batchSmsRef, selectedIndexs, collectionList, exportExcel, exportExcelData, managerTags, smsCondition, managerMultiTag, tagChoices, tagsData, smsReceiver, noAppidWhatShouldIDoLink, openTagsPopup, onqueryload, search, changeSize, onPageChanged, selectionChange, navigateTo, delTable, confirmDelete, sortChange, filterChange, canWriteUsers, isCurrentUser, canDeleteUser, canDeleteSelectedUsers, canManageSelectedTags, busy, tagsDialogOpen, tagsLoading, tagsError, tagTargetIds, closeTagsPopup, retryTags, addTagFromDialog } = useAdminList('user');
+const tagsContainerStyle = 'display: flex; flex-direction: column; width: 100%; height: 100%; background-color: transparent;'
+function changeManagedTags(event: UniCheckboxGroupChangeEvent) { managerTags.value = event.detail.value }
+function toggleManagedTag(value: string) {
+  if (busy.value) return
+  managerTags.value = managerTags.value.includes(value) ? managerTags.value.filter(item => item !== value) : [...managerTags.value, value]
+}
 </script>
 
 <style>
-  .tags-manager--x {
-      width: 400px;
-      padding: 40px 30px;
-      border-radius: 5px;
-      background-color: #fff;
-  }
-
-  .tags-manager--header {
-      font-size: 22px;
-      color: #333;
-      text-align: center;
-  }
-
-  .mb {
-    margin-bottom: 80px;
-  }
-
-  .ml {
-    margin-left: 30px;
-  }
+  .user-name { font-size: 14px; line-height: 22px; text-align: center; }
+  .current-user-label { margin-top: 4px; font-size: 12px; line-height: 18px; text-align: center; color: #909399; }
+  .tags-backdrop { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; background-color: rgba(0, 0, 0, 0.35); }
+  .tags-dialog { display: flex; flex-direction: column; flex-shrink: 1; width: 100%; max-width: 440px; min-height: 0; padding: 20px; box-sizing: border-box; background-color: #ffffff; border-radius: 8px; }
+  .tags-header { display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
+  .tags-title { font-size: 18px; line-height: 28px; font-weight: 600; color: #303133; }
+  .tags-close { display: flex; flex-direction: row; align-items: center; justify-content: center; flex-shrink: 0; width: 32px; height: 32px; padding: 0; margin: 0; border: 0; background-color: transparent; }
+  .tags-summary { margin-top: 8px; font-size: 13px; line-height: 22px; color: #909399; }
+  .tags-field-label { margin-top: 16px; margin-bottom: 8px; font-size: 14px; line-height: 22px; color: #606266; }
+  .tags-state { font-size: 14px; line-height: 24px; color: #909399; }
+  .tags-error { font-size: 13px; line-height: 22px; color: #b42318; }
+  .tags-empty { display: flex; flex-direction: column; align-items: flex-start; padding: 12px 0; }
+  .tags-options { min-height: 0; flex-shrink: 1; }
+  .tags-option { display: flex; flex-direction: row; align-items: center; min-height: 44px; padding: 6px 0; box-sizing: border-box; }
+  .tags-checkbox { flex-shrink: 0; margin-right: 8px; }
+  .tags-option-text { flex: 1; min-width: 0; font-size: 14px; line-height: 22px; color: #303133; white-space: normal; overflow-wrap: anywhere; }
+  .tags-warning { margin-top: 16px; font-size: 12px; line-height: 20px; color: #856321; }
+  .tags-actions { display: flex; flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 20px; }
+  .tags-action-end { display: flex; flex-direction: row; align-items: center; margin-left: auto; }
+  .tags-clear { padding: 0 8px; margin: 4px 8px 4px 0; font-size: 13px; line-height: 34px; min-height: 34px; color: #b42318; background-color: #ffffff; }
+  .tags-secondary { margin: 4px 0; padding: 0 12px; font-size: 13px; line-height: 34px; min-height: 34px; border-radius: 4px; }
+  .tags-save { margin: 4px 0 4px 10px; padding: 0 12px; font-size: 13px; line-height: 34px; min-height: 34px; border-radius: 4px; }
 </style>

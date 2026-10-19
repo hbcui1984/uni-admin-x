@@ -1,11 +1,12 @@
 import { computed, getCurrentInstance, nextTick, ref, shallowRef } from 'vue';
-import { onLoad, onReady, onShow } from '@dcloudio/uni-app';
+import { onHide, onLoad, onReady, onShow, onUnload } from '@dcloudio/uni-app';
 import menuValidator from '@/js_sdk/validator/opendb-admin-menus.js';
 import { validator as permissionValidator } from '@/js_sdk/validator/uni-id-permissions.js';
 import { validator as roleValidator } from '@/js_sdk/validator/uni-id-roles.js';
 import { validator as userValidator, enumConverter } from '@/js_sdk/validator/uni-id-users.js';
 import { validator as tagValidator } from '@/js_sdk/validator/uni-id-tag.js';
-import { identity, currentRoute, LOGIN_URL } from '@/common/admin-navigation';
+import { identity, hasPermission, currentRoute, LOGIN_URL } from '@/common/admin-navigation';
+import type { RemoveUsersResponse } from '@/common/admin-user-types';
 
 type Kind = 'menu' | 'permission' | 'role' | 'user' | 'tag' | 'app';
 type Row = Record<string, any>;
@@ -143,6 +144,8 @@ export function useAdminForm(kind: Exclude<Kind, 'app'>, editing: boolean) {
   const showPassword = ref(false);
   const submitting = ref(false);
   const detailReady = ref(!editing);
+  let formOwner = '';
+  const canSubmit = () => accessReady.value && (kind !== 'user' || (identity().tokenExpired > Date.now() && identity().role.includes('admin')));
   const validators = { menu: menuValidator, permission: permissionValidator, role: roleValidator, user: userValidator, tag: tagValidator };
   const rules = computed(() => {
     const result: Row = {};
@@ -184,6 +187,8 @@ export function useAdminForm(kind: Exclude<Kind, 'app'>, editing: boolean) {
   };
   const submit = async () => {
     if (!checkAccess()) return;
+    if (identity().uid !== formOwner) return reportAdminError(new Error('登录账号已变化，请重新打开表单'));
+    if (!canSubmit()) return reportAdminError(new Error('当前账号没有维护用户的权限'));
     if (submitting.value || !detailReady.value) return;
     if (!formRef.value) return reportAdminError(new Error('表单尚未就绪'));
     submitting.value = true;
@@ -191,6 +196,7 @@ export function useAdminForm(kind: Exclude<Kind, 'app'>, editing: boolean) {
     try {
       formRef.value.setRules(rules.value);
       const validatedValue = await formRef.value.validate();
+      if (identity().uid !== formOwner) throw new Error('登录账号已变化，请重新打开表单');
       const db = getDatabase();
       if (!db) { submitting.value = false; return; }
       validated = true;
@@ -207,7 +213,7 @@ export function useAdminForm(kind: Exclude<Kind, 'app'>, editing: boolean) {
         if (!editing && !value.mobile) delete value.mobile;
         if (!editing && !value.email) delete value.email;
         if (editing) value.uid = formDataId.value;
-        if (editing && formDataId.value === userId.value) value.status = 0;
+        if (editing && formDataId.value === userId.value) { delete value.status; delete value.role; }
         const co = uniCloud.importObject('uni-id-co');
         const res = editing ? await co.updateUser<AdminMutationResponse>(value) : await co.addUser<AdminMutationResponse>(value);
         if (res.errCode) throw new Error(res.errMsg || String(res.errCode));
@@ -231,6 +237,7 @@ export function useAdminForm(kind: Exclude<Kind, 'app'>, editing: boolean) {
     const db = getDatabase();
     if (!db) return;
     userId.value = identity().uid;
+    formOwner = userId.value;
     if (!editing && kind === 'menu') formData.value.parent_id = query?.parent_id || '';
     if (editing) {
       formDataId.value = query?.id || '';
@@ -253,7 +260,7 @@ export function useAdminForm(kind: Exclude<Kind, 'app'>, editing: boolean) {
   return {
     accessReady,
     formData, formDataId, formRef, rules, roles, permissionChoices, tagChoices, appList, userId, showPassword, submitting, detailReady,
-    iconPopupRef, binddata, submit, submitForm: submit,
+    iconPopupRef, binddata, submit, submitForm: submit, canSubmit,
     unknownAppidsCom: computed(() => unknownAppids.value.join('、')),
     showIconPopup: () => iconPopupRef.value?.open(),
     trigger: () => { showPassword.value = !showPassword.value; formData.value.password = ''; },
@@ -269,16 +276,26 @@ export function useAdminList(kind: 'permission' | 'role' | 'user' | 'tag' | 'app
   const proxy = getCurrentInstance()!.proxy as any;
   const udbRef = ref<DatabaseListHandle | null>(null);
   const tableRef = ref<TableHandle | null>(null);
-  const tagsPopupRef = ref<PopupHandle | null>(null);
   const batchSmsRef = ref<Pick<PopupHandle, 'open'> | null>(null);
   const query = ref('');
   const where = ref('');
   const orderby = ref(kind === 'user' ? 'last_login_date desc' : 'create_date desc');
   const selectedIndexs = ref<number[]>([]);
+  const pageRows = ref<Row[]>([]);
   const filters = ref<Row>({});
   const tags = ref<Record<string, string>>({});
   const managerTags = ref<string[]>([]);
   const busy = ref(false);
+  const confirmingDelete = ref(false);
+  const tagsDialogOpen = ref(false);
+  const tagsLoading = ref(false);
+  const tagsError = ref('');
+  const tagTargetIds = ref<string[]>([]);
+  let tagOwner = '';
+  let tagRequest = 0;
+  let active = true;
+  let listOwner = '';
+  let ready = false;
   const queryTagid = ref('');
   const smsCondition = ref<Row>({});
   const options = ref({ pageSize: 20, pageCurrent: 1, ...enumConverter, status_valuetotext: { ...enumConverter.status_valuetotext, 4: '已注销' }, filterData: { status_localdata: [0, 1, 2, 3, 4].map((value, i) => ({ value, text: ['正常', '禁用', '审核中', '审核拒绝', '已注销'][i] })) } });
@@ -291,53 +308,125 @@ export function useAdminList(kind: 'permission' | 'role' | 'user' | 'tag' | 'app
     return kind === 'role' ? [db.collection('uni-id-roles').field('comment,permission,role_id,role_name,create_date').getTemp(), db.collection('uni-id-permissions').field('permission_name,permission_id').getTemp()] : kind === 'user' ? [db.collection('uni-id-users').field('ali_openid,apple_openid,avatar,avatar_file,comment,dcloud_appid,department_id,email,email_confirmed,gender,invite_time,inviter_uid,last_login_date,last_login_ip,mobile,mobile_confirmed,my_invite_code,nickname,role,score,status,username,wx_unionid,qq_unionid,tags').getTemp(), db.collection('uni-id-roles').field('role_id,role_name').getTemp()] : [];
   });
   const searchFields = kind === 'permission' ? ['permission_id', 'permission_name'] : kind === 'role' ? ['role_id', 'role_name', 'permission.permission_name'] : kind === 'tag' ? ['tagid', 'name', 'description'] : kind === 'app' ? ['appid', 'name', 'description', 'remark'] : ['username', 'nickname', 'role.role_name', 'mobile', 'email'];
-  const resetSelection = () => { selectedIndexs.value = []; tableRef.value?.clearSelection(); };
+  function closeTagsPopup() {
+    if (busy.value) return;
+    tagsDialogOpen.value = false;
+    tagTargetIds.value = [];
+    managerTags.value = [];
+  }
+  const resetSelection = () => { closeTagsPopup(); selectedIndexs.value = []; tableRef.value?.clearSelection(); };
   const loadData = (clear = true) => {
     if (!checkAccess()) return;
     resetSelection();
+    pageRows.value = [];
     if (clear) options.value.pageCurrent = 1;
+    listOwner = identity().uid;
     udbRef.value?.loadData(new UTSJSONObject({ clear, current: options.value.pageCurrent }));
   };
   const rebuildWhere = () => { where.value = adminWhere(query.value, searchFields, filters.value); nextTick(() => loadData()); };
-  const selectedItems = (): string[] => selectedIndexs.value.map(i => udbRef.value?.dataList?.[i]?._id).filter(Boolean);
-  const remove = (ids: string[]) => {
+  const selectedItems = (): string[] => selectedIndexs.value.map(i => pageRows.value[i]?._id).filter(Boolean);
+  const canWriteUsers = () => checkSession() && listOwner === identity().uid && identity().role.includes('admin');
+  function checkSession() { const user = identity(); return !!user.uid && user.tokenExpired > Date.now(); }
+  const isCurrentUser = (id: string) => id === identity().uid;
+  const canDeleteUser = (id: string) => typeof id === 'string' && !!id && checkSession() && listOwner === identity().uid && pageRows.value.some(row => row._id === id) && !isCurrentUser(id) && hasPermission('DELETE_UNI_ID_USERS');
+  const canDeleteSelectedUsers = computed(() => !busy.value && !confirmingDelete.value && selectedIndexs.value.length > 0 &&
+    selectedItems().length === selectedIndexs.value.length && selectedItems().every(canDeleteUser));
+  const canManageSelectedTags = computed(() => !busy.value && selectedIndexs.value.length > 0 && selectedItems().length === selectedIndexs.value.length && listOwner === identity().uid && hasPermission('UPDATE_UNI_ID_USERS'));
+  const remove = (input: string[]) => {
+    const ids = [...new Set(input)];
     if (!checkAccess()) return;
-    if (!ids.length || busy.value) return;
-    if (kind === 'user' && ids.includes(identity().uid)) return reportAdminError(new Error('不能删除当前登录账号'));
+    if (!ids.length || busy.value || confirmingDelete.value) return;
+    const owner = identity().uid;
+    if (kind === 'user') {
+      if (ids.includes(owner)) return reportAdminError(new Error('不能删除当前登录账号'));
+      if (listOwner !== owner) return reportAdminError(new Error('列表账号已变化，请刷新后重新操作'));
+      if (!ids.every(canDeleteUser)) return reportAdminError(new Error('没有删除用户的权限'));
+      if (!ids.every(id => pageRows.value.some(row => row._id === id))) return reportAdminError(new Error('列表已变化，请刷新后重新选择'));
+    }
+    confirmingDelete.value = true;
     uni.showModal({ title: '提示', content: `确认删除选中的 ${ids.length} 条记录？` + (kind === 'app' ? '仅删除应用记录，不删除关联版本等数据。' : ''), success: async res => {
       if (!res.confirm || busy.value) return;
+      if (identity().uid !== owner || !checkAccess()) return reportAdminError(new Error('登录账号已变化，请重新选择记录'));
+      if (kind === 'user' && !ids.every(canDeleteUser)) return reportAdminError(new Error('当前账号或权限已变化，删除已取消'));
       const db = getDatabase();
       if (!db) return;
       busy.value = true;
       try {
-        await db.collection(collections[kind]).where(`_id in ${JSON.stringify(ids)}`).remove();
+        if (kind === 'user') {
+          const api = uniCloud.importObject('uni-admin-co', { customUI: true });
+          const result = await api.removeUsers<RemoveUsersResponse>(ids);
+          if (result.errCode !== 0 || result.deletedCount !== ids.length) throw new Error(result.errMsg || '删除结果无法确认，请刷新列表核查');
+        } else await db.collection(collections[kind]).where(`_id in ${JSON.stringify(ids)}`).remove();
+        if (!active || identity().uid !== owner) return;
         loadData();
-      } catch (err) { reportAdminError(err); } finally { busy.value = false; }
-    } });
+      } catch (err) {
+        if (active && identity().uid === owner) { reportAdminError(err); if (kind === 'user') loadData(false); }
+      } finally { busy.value = false; }
+    }, complete: () => { confirmingDelete.value = false; } });
   };
   const loadTags = async () => {
     if (kind !== 'user' || !checkAccess()) return;
+    const request = ++tagRequest;
+    const owner = identity().uid;
+    tagsLoading.value = true;
+    tagsError.value = '';
     try {
       const choices = await readAdminChoices(getDatabase, 'uni-id-tag', 'tagid', 'name');
-      if (!checkAccess()) return;
+      if (!active || request !== tagRequest || identity().uid !== owner || !checkAccess()) return;
       tags.value = Object.fromEntries(choices.map(item => [item.value, item.text]));
-    } catch (err) { if (accessReady.value) reportAdminError(err); }
+    } catch (_) {
+      if (active && request === tagRequest && identity().uid === owner) tagsError.value = '标签加载失败，请检查读取权限或网络后重试';
+    } finally { if (request === tagRequest) tagsLoading.value = false; }
   };
-  const managerMultiTag = async () => {
-    const db = getDatabase();
-    if (!db) return;
+  async function openTagsPopup() {
+    if (!checkAccess() || !canManageSelectedTags.value) return;
     const ids = selectedItems();
-    if (!ids.length || busy.value) return;
+    if (!ids.length || ids.length !== selectedIndexs.value.length) return reportAdminError(new Error('列表已变化，请重新选择用户'));
+    tagOwner = identity().uid;
+    tagTargetIds.value = [...new Set(ids)];
+    managerTags.value = [];
+    tagsDialogOpen.value = true;
+    await loadTags();
+  }
+  const managerMultiTag = (clear = false) => {
+    if (!tagsDialogOpen.value || busy.value || tagsLoading.value || tagsError.value || !tagTargetIds.value.length) return;
+    if (!checkAccess() || identity().uid !== tagOwner || !hasPermission('UPDATE_UNI_ID_USERS')) {
+      closeTagsPopup(); return reportAdminError(new Error('登录账号或权限已变化，请重新打开标签管理'));
+    }
+    const values = clear ? [] : [...managerTags.value];
+    if (!clear && (!values.length || values.some(value => !Object.prototype.hasOwnProperty.call(tags.value, value)))) return;
+    const ids = [...tagTargetIds.value];
+    const owner = tagOwner;
     busy.value = true;
-    try {
-      await db.collection('uni-id-users').where(`_id in ${JSON.stringify(ids)}`).update({ tags: [...managerTags.value] });
-      if (!checkAccess()) return;
-      tagsPopupRef.value?.close();
-      managerTags.value = [];
-      loadData(false);
-      uni.showToast({ title: '修改标签成功' });
-    } catch (err) { reportAdminError(err); } finally { busy.value = false; }
+    uni.showModal({
+      title: clear ? '确认清空标签' : '确认替换标签',
+      content: clear ? `将清空 ${ids.length} 位用户的全部标签，是否继续？` : `将 ${ids.length} 位用户的现有标签替换为勾选的 ${values.length} 个标签，是否继续？`,
+      success: async confirmation => {
+        if (!confirmation.confirm) { busy.value = false; return; }
+        if (!active || !tagsDialogOpen.value || identity().uid !== owner || !checkAccess() || !hasPermission('UPDATE_UNI_ID_USERS')) {
+          busy.value = false; closeTagsPopup(); return reportAdminError(new Error('登录账号或权限已变化，标签修改已取消'));
+        }
+        try {
+          const db = getDatabase();
+          if (!db) return;
+          const response = await db.collection('uni-id-users').where(`_id in ${JSON.stringify(ids)}`).update({ tags: values });
+          if (response.errCode) throw new Error(response.errMsg || '保存标签失败');
+          if (!active || identity().uid !== owner) return;
+          busy.value = false;
+          closeTagsPopup();
+          loadData(false);
+          uni.showToast({ title: clear ? '标签已清空' : '标签已保存' });
+        } catch (err) { if (active && identity().uid === owner) reportAdminError(err); }
+        finally { busy.value = false; }
+      },
+      fail: () => { busy.value = false; }
+    });
   };
+  function addTagFromDialog() {
+    if (busy.value || !checkAccess() || !hasPermission('CREATE_UNI_ID_TAG')) return;
+    closeTagsPopup();
+    uni.navigateTo({ url: '/pages/system/tag/add', events: { refreshData: loadTags } });
+  }
   onLoad(params => {
     if (!checkAccess()) return;
     if (kind !== 'user') return;
@@ -345,18 +434,31 @@ export function useAdminList(kind: 'permission' | 'role' | 'user' | 'tag' | 'app
     if (params?.id) filters.value._id = { type: 'select', value: [params.id] };
     where.value = adminWhere(query.value, searchFields, filters.value);
   });
-  onReady(async () => { if (!checkAccess()) return; await loadTags(); await nextTick(); loadData(); });
+  onReady(async () => { if (!checkAccess()) return; await loadTags(); await nextTick(); ready = true; loadData(); });
+  onShow(() => {
+    active = true;
+    if (ready && listOwner && listOwner !== identity().uid) {
+      tags.value = {}; exportExcelData.value = []; resetSelection();
+      if (checkAccess()) void loadTags().then(() => loadData());
+    }
+  });
+  onHide(() => { active = false; tagRequest++; tagsDialogOpen.value = false; tagTargetIds.value = []; managerTags.value = []; });
+  onUnload(() => { active = false; tagRequest++; });
   return {
     accessReady,
-    query, where, orderby, options, udbRef, tableRef, tagsPopupRef, batchSmsRef, selectedIndexs, collectionList,
+    query, where, orderby, options, udbRef, tableRef, batchSmsRef, selectedIndexs, collectionList, pageRows,
+    canWriteUsers, isCurrentUser, canDeleteUser, canDeleteSelectedUsers, canManageSelectedTags, busy,
+    tagsDialogOpen, tagsLoading, tagsError, tagTargetIds, closeTagsPopup, retryTags: loadTags, addTagFromDialog,
     exportExcel, exportExcelData, managerTags, smsCondition, managerMultiTag,
     tagsData: computed(() => Object.keys(tags.value).map(value => ({ value, text: tags.value[value], checked: queryTagid.value === value }))),
     tagChoices: computed(() => Object.keys(tags.value).map(value => ({ value, text: tags.value[value] }))),
-    smsReceiver: computed(() => kind === 'tag' ? selectedIndexs.value.map(i => udbRef.value?.dataList?.[i]?.tagid).filter(Boolean) : selectedIndexs.value.length ? selectedItems() : undefined),
+    smsReceiver: computed(() => kind === 'tag' ? selectedIndexs.value.map(i => pageRows.value[i]?.tagid).filter(Boolean) : selectedIndexs.value.length ? selectedItems() : undefined),
     noAppidWhatShouldIDoLink: 'https://uniapp.dcloud.net.cn/uniCloud/uni-id?id=makeup-dcloud-appid',
-    openTagsPopup: () => { managerTags.value = []; tagsPopupRef.value?.open(); },
+    openTagsPopup,
     onqueryload: (data: Row[]) => {
-      if (!checkAccess()) return;
+      if (!checkAccess() || listOwner !== identity().uid) { data.splice(0); pageRows.value = []; return; }
+      // dataList 是框架 Element 的初始数组引用，replace 分页后以 load 事件为准。
+      pageRows.value = data.map(item => ({ ...item }));
       data.forEach(item => {
         if (kind === 'role') item.permission = (item.permission || []).map((p: Row | string) => typeof p === 'string' ? p : p.permission_name || p.permission_id).join('、');
         if (kind === 'user') {
