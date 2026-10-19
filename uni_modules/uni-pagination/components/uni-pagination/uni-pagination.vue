@@ -5,7 +5,7 @@
 			:value="pageSizeIndex" :range="pageSizeRange" @change="pickerChange" @cancel="pickerClick"
 			@click.native="pickerClick">
 			<button class="page-size-button" type="default" size="mini" :plain="true">
-				<text>{{pageSizeRange[pageSizeIndex]}} {{piecePerPage}}</text>
+				<text class="page-size-text">{{pageSizeRange[pageSizeIndex]}} {{piecePerPage}}</text>
 				<uni-icons class="select-picker-icon" type="arrowdown" size="12" color="#999"></uni-icons>
 			</button>
 		</picker>
@@ -31,7 +31,7 @@
 				<!-- #ifndef APP-NVUE -->
 				<view v-for="(item, index) in paper" :key="index" :class="{ 'page--active': item === currentIndex }"
 					class="uni-pagination__num-tag tag--active is-phone-hide" @click.top="selectPage(item, index)">
-					<text>{{ item }}</text>
+					<text class="uni-pagination__num-tag-text">{{ item }}</text>
 				</view>
 				<!-- #endif -->
 
@@ -315,7 +315,16 @@
 		align-items: center;
 		justify-content: center;
 		min-width: 96px;
+		width: 112px;
+		flex-shrink: 0;
+		box-sizing: border-box;
 		height: 32px;
+	}
+	.page-size-text {
+		font-size: 12px;
+		line-height: 30px;
+		text-align: center;
+		white-space: nowrap;
 	}
 	$uni-primary: #2979ff !default;
 	.uni-pagination {
@@ -341,6 +350,8 @@
 		cursor: pointer;
 		/* #endif */
 		padding: 0 8px;
+		height: 30px;
+		flex-shrink: 0;
 		line-height: 30px;
 		font-size: 12px;
 		position: relative;
@@ -384,6 +395,10 @@
 	}
 
 	.uni-pagination__num-tag {
+		flex-direction: row;
+		justify-content: center;
+		align-items: center;
+		flex-shrink: 0;
 		/* #ifdef H5 */
 		cursor: pointer;
 		min-width: 30px;
@@ -400,6 +415,12 @@
 		// border-color: $uni-border-color;
 	}
 
+	.uni-pagination__num-tag-text {
+		font-size: 12px;
+		line-height: 30px;
+		text-align: center;
+	}
+
 	.uni-pagination__num-current {
 		/* #ifndef APP-NVUE */
 		display: flex;
@@ -409,6 +430,9 @@
 
 	.uni-pagination__num-current-text {
 		font-size: 15px;
+		min-width: 32px;
+		line-height: 30px;
+		text-align: center;
 	}
 
 	.current-index-text{
@@ -461,6 +485,11 @@
 
 		.is-phone-hide {
 			display: block;
+		}
+
+		.uni-pagination__num-tag {
+			display: flex;
+			flex-direction: row;
 		}
 
 		.uni-pagination__num-flex-none {
