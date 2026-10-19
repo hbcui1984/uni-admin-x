@@ -87,6 +87,28 @@ beforeEach(() => {
   })
 })
 
+test('updateUser 阻止本人禁用和去掉 admin，允许普通资料更新', async () => {
+  tables['uni-id-users'][0].role = ['admin']
+  const object = registrationApi('mock-admin-token')
+  const base = { uid: 'mock-member', username: 'admin' }
+  expect((await object.updateUser({ ...base, status: 1 })).errCode).toBe('USER_UPDATE_SELF_DISABLED')
+  expect((await object.updateUser({ ...base, role: [] })).errCode).toBe('USER_UPDATE_SELF_DEMOTION')
+  expect(uniCloudTest.db.collection('uni-id-users').update).not.toHaveBeenCalled()
+  expect((await object.updateUser({ ...base, role: ['admin'], status: 0, nickname: 'mock-name' })).errCode).toBe(0)
+})
+
+test('updateUser 数据库已降权、禁用、查询异常不允许旧 admin token 更新', async () => {
+  const object = registrationApi('mock-admin-token')
+  const params = { uid: 'mock-other', username: 'othername' }
+  expect((await object.updateUser(params)).errCode).toBe('uni-id-permission-error')
+  tables['uni-id-users'][0].role = ['admin']
+  tables['uni-id-users'][0].status = 1
+  expect((await object.updateUser(params)).errCode).toBe('uni-id-permission-error')
+  uniCloudTest.db.collection('uni-id-users').get.mockResolvedValueOnce({})
+  expect((await object.updateUser(params)).errCode).toBe('uni-id-permission-error')
+  expect(uniCloudTest.db.collection('uni-id-users').update).not.toHaveBeenCalled()
+})
+
 test('匿名状态仅公开初始化信息，无账号记录或数量', async () => {
   const result = await api().getSetupStatus()
   expect(result).toMatchObject({ errCode: 0, hasAdmin: false, canClaimAdmin: false, canRegisterAdmin: true, menuCount: null })

@@ -2,6 +2,7 @@
 
 const uniIdCommon = require('uni-id-common')
 const setup = require('uni-admin-setup')
+const removeUsers = require('./remove-users')
 
 function checkArguments(args) {
   if (args.length) throw setup.fail('SETUP_INVALID_ARGUMENT')
@@ -37,6 +38,10 @@ function isAdmin(auth) {
 }
 
 module.exports = {
+  async removeUsers(...args) {
+    return removeUsers(this, args)
+  },
+
   async getSetupStatus(...args) {
     try {
       checkArguments(args)

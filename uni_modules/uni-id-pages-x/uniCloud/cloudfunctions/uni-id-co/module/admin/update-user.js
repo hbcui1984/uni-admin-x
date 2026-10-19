@@ -78,6 +78,26 @@ module.exports = async function (params = {}) {
     status
   } = params
 
+  // 不沿用中间件缓存的角色，避免旧 token 在数据库降权后继续管理用户。
+  const verified = await this.uniIdCommon.checkToken(this.getUniIdToken(), { autoRefresh: false })
+  if (!verified || verified.errCode || !verified.uid) {
+    throw { errCode: 'uni-id-check-token-failed' }
+  }
+  const actorResult = await userCollection.doc(verified.uid).field({ _id: true, role: true, status: true }).get()
+  const actor = actorResult && Array.isArray(actorResult.data) && actorResult.data[0]
+  if (!actorResult || actorResult.errCode || !actor || actor._id !== verified.uid ||
+    (actor.status !== undefined && actor.status !== 0) || !Array.isArray(actor.role) || !actor.role.includes('admin')) {
+    throw { errCode: ERROR.PERMISSION_ERROR }
+  }
+  if (uid === verified.uid) {
+    if (status !== undefined && status !== 0) {
+      throw { errCode: 'USER_UPDATE_SELF_DISABLED', errMsg: '不能停用当前登录账号' }
+    }
+    if (role !== undefined && !role.includes('admin')) {
+      throw { errCode: 'USER_UPDATE_SELF_DEMOTION', errMsg: '不能移除当前登录账号的管理员角色' }
+    }
+  }
+
   // 更新的用户数据字段
   const data = {
     username,
