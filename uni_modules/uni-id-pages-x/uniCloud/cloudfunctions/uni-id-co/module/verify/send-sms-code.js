@@ -37,32 +37,22 @@ module.exports = async function (params = {}) {
       errCode: ERROR.INVALID_PARAM
     }
   }
-  await verifyCaptcha.call(this, {
-    scene: 'send-sms-code',
-    captcha
-  })
-
-  // -- 测试代码
   const {
     templateId
   } = (this.config.service &&
     this.config.service.sms &&
     this.config.service.sms.scene &&
     this.config.service.sms.scene[scene]) || {}
-  if (!templateId || !templateId.replace(/[^0-9a-zA-Z]/g, '')) {
-    await require('../../lib/utils/verify-code')
-      .setMobileVerifyCode.call(this, {
-        mobile: params.mobile,
-        code: '123456',
-        expiresIn: 180,
-        scene
-      })
-    return {
+  if (typeof templateId !== 'string' || !templateId.replace(/[^0-9a-zA-Z]/g, '')) {
+    throw {
       errCode: 'uni-id-invalid-sms-template-id',
-      errMsg: `未找到scene=${scene},的短信模版templateId。\n已启动测试模式，直接使用：123456作为短信验证码即可。\n如果是正式项目，请在路径：/common/uni-config-center/uni-id/config.json中service->sms中配置密钥等信息\n更多详情：https://uniapp.dcloud.io/uniCloud/uni-id.html#config`
+      errMsg: '短信验证码服务未配置'
     }
   }
-  // -- 测试代码
+  await verifyCaptcha.call(this, {
+    scene: 'send-sms-code',
+    captcha
+  })
 
   return sendSmsCode.call(this, {
     mobile,

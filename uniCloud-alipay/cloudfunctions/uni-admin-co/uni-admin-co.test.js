@@ -87,6 +87,27 @@ beforeEach(() => {
   })
 })
 
+test('邮箱发码关闭，不产生验证码或用户写入', async () => {
+  const object = registrationApi()
+  expect((await object.sendEmailCode({ email: 'mock@example.invalid', captcha: 'mock', scene: 'register' })).errCode).toBe('EMAIL_SERVICE_UNAVAILABLE')
+  expect(uniCloudTest.db.collection('opendb-verify-codes').add).not.toHaveBeenCalled()
+  expect(uniCloudTest.db.collection('uni-id-users').add).not.toHaveBeenCalled()
+})
+
+test('短信场景缺少模板时拒绝且不写入验证码', async () => {
+  for (const scene of ['login-by-sms', 'reset-pwd-by-sms', 'bind-mobile-by-sms', 'set-pwd-by-sms']) {
+    const result = await registrationApi().sendSmsCode({ mobile: '13800138000', captcha: 'mock', scene })
+    expect(result.errCode).toBe('uni-id-invalid-sms-template-id')
+  }
+  expect(uniCloudTest.db.collection('opendb-verify-codes').add).not.toHaveBeenCalled()
+})
+
+test('邮箱注册保留原验证码校验流程', async () => {
+  const result = await registrationApi().registerUserByEmail({ email: 'mock@example.invalid', password: 'Mock123456', code: 'wrong-code' })
+  expect(result.errCode).toBe('uni-id-email-verify-code-error')
+  expect(uniCloudTest.db.collection('uni-id-users').add).not.toHaveBeenCalled()
+})
+
 test('updateUser 阻止本人禁用和去掉 admin，允许普通资料更新', async () => {
   tables['uni-id-users'][0].role = ['admin']
   const object = registrationApi('mock-admin-token')
