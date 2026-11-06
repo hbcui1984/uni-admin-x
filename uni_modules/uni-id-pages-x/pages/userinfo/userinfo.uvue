@@ -29,9 +29,12 @@
 				<text class="item-value">{{ userInfo['email'] }}</text>
 			</view>
 			<view class="item" @click="changePassword">
-				<text class="item-title">修改密码</text>
+				<text class="item-title">{{ passwordState == 'set' ? '修改密码' : passwordState == 'unset' ? '设置密码' : passwordState == 'error' ? '使用原密码修改' : '密码状态' }}</text>
+				<text v-if="passwordState == 'loading'" class="item-unset">加载中</text>
+				<text v-if="passwordState == 'error'" class="item-unset">密码状态获取失败</text>
 				<uni-id-pages-x-icons :size="16" type="right-arrow" class="link-icon" />
 			</view>
+			<view v-if="passwordState == 'error'" class="item" @click="loadAccountInfo"><text class="item-title">重试获取密码状态</text></view>
 		</view>
 		<view class="list">
 			<view v-if="allowAccountDeactivation" @click="deactivate" class="item deactivate-item">
@@ -56,9 +59,15 @@
 	import { state } from '@/uni_modules/uni-id-pages-x/store.uts';
 	import { logout as doLogout } from '@/uni_modules/uni-id-pages-x/common/common.uts';
 	import config from '@/uni_modules/uni-id-pages-x/config.uts';
+	import { getAccountCloudObject } from '@/uni_modules/uni-id-pages-x/common/client-cloud.uts';
 	import { rememberAccountAccess, accountRouteUrl, accountLoginPath } from '../../common/account-route';
+	type AccountInfoResponse = { errCode: number | string, isPasswordSet?: boolean }
 	const proxy = getCurrentInstance()?.proxy as any
 	const accessReady = ref(false)
+	const passwordState = ref('loading')
+	let accountRequest = 0
+	let accountUid : string | null = null
+	let accountToken = ''
 	let accessTarget = '/uni_modules/uni-id-pages-x/pages/userinfo/userinfo'
 	const smsEnabled = config.getBoolean('smsEnabled') == true
 	const allowAccountDeactivation = config.getBoolean('allowAccountDeactivation') == true
@@ -91,7 +100,26 @@
 		const value = options["showLoginManage"]
 		showLoginManage.value = value == null ? true : value == "true"
 	})
-	onShow(() => { checkAccess() })
+	onShow(() => { checkAccess(); loadAccountInfo() })
+	onUnload(() => { accountRequest++ })
+	async function loadAccountInfo() {
+		const request = ++accountRequest
+		passwordState.value = 'loading'
+		if (!accessReady.value) return
+		const user = uniCloud.getCurrentUserInfo()
+		const uid = user?.uid
+		const token = uni.getStorageSync('uni_id_token')
+		accountUid = uid ?? null
+		accountToken = token
+		try {
+			const result = await getAccountCloudObject('uni-id-co').getAccountInfo<AccountInfoResponse>()
+			if (request != accountRequest || uniCloud.getCurrentUserInfo()?.uid != uid || uni.getStorageSync('uni_id_token') != token) return
+			const isSet = result != null && result.errCode == 0 ? result.isPasswordSet : null
+			passwordState.value = isSet == null ? 'error' : (isSet ? 'set' : 'unset')
+		} catch (_) {
+			if (request == accountRequest && uniCloud.getCurrentUserInfo()?.uid == uid && uni.getStorageSync('uni_id_token') == token) passwordState.value = 'error'
+		}
+	}
 	function checkAccess() {
 		const user = uniCloud.config ? uniCloud.getCurrentUserInfo() : null
 		accessReady.value = user != null && user.uid != null && user.tokenExpired > Date.now()
@@ -124,7 +152,11 @@
 		})
 	}
 	function changePassword() {
-		uni.navigateTo({ url: '/pages/account/change-password' })
+		if (passwordState.value == 'loading') return
+		checkAccess()
+		if (!accessReady.value) return
+		if (uniCloud.getCurrentUserInfo()?.uid != accountUid || uni.getStorageSync('uni_id_token') != accountToken) { loadAccountInfo(); return }
+		uni.navigateTo({ url: passwordState.value == 'error' ? '/pages/account/change-password?fallback=1' : '/pages/account/change-password' })
 	}
 
 	function logout() {
