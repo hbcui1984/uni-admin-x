@@ -1,4 +1,4 @@
-const { userCollection, SMS_SCENE, LOG_TYPE, CAPTCHA_SCENE } = require('../../common/constants')
+const { userCollection, dbCmd, SMS_SCENE, LOG_TYPE, CAPTCHA_SCENE } = require('../../common/constants')
 const { ERROR } = require('../../common/error')
 const { verifyMobileCode } = require('../../lib/utils/verify-code')
 const PasswordUtils = require('../../lib/utils/password')
@@ -24,9 +24,16 @@ module.exports = async function (params = {}) {
       errCode: ERROR.ACCOUNT_NOT_EXISTS
     }
   }
+  if (userRecord.password !== undefined && userRecord.password !== null && userRecord.password !== '') {
+    throw { errCode: 'PASSWORD_ALREADY_SET', errMsg: '账号已设置密码' }
+  }
+  if (typeof userRecord.mobile !== 'string' || !userRecord.mobile.trim() || userRecord.mobile_confirmed !== 1) {
+    throw { errCode: 'MOBILE_NOT_CONFIRMED', errMsg: '请先绑定已验证的手机号' }
+  }
 
   const needCaptcha = await getNeedCaptcha.call(this, {
-    mobile: userRecord.mobile
+    mobile: userRecord.mobile,
+    type: LOG_TYPE.SET_PWD_BY_SMS
   })
 
   if (needCaptcha) {
@@ -65,10 +72,21 @@ module.exports = async function (params = {}) {
   })
 
   // 更新用户密码
-  await userCollection.doc(uid).update({
+  const passwordCondition = Object.prototype.hasOwnProperty.call(userRecord, 'password')
+    ? userRecord.password
+    : dbCmd.exists(false)
+  const result = await userCollection.where({
+    _id: uid,
+    password: passwordCondition,
+    mobile: userRecord.mobile,
+    mobile_confirmed: 1
+  }).update({
     password: passwordHash,
     password_secret_version: version
   })
+  if (!result || result.updated !== 1) {
+    throw { errCode: 'PASSWORD_SET_CONFLICT', errMsg: '密码设置失败，请重新确认账号状态' }
+  }
 
   await this.middleware.uniIdLog({
     data: {

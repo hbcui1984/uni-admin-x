@@ -116,6 +116,70 @@ test('注销对普通用户和管理员均关闭，不更新账户', async () =>
   expect(uniCloudTest.db.collection('uni-id-users').update).not.toHaveBeenCalled()
 })
 
+test('已有密码拒绝首次设置，验证码不被消费', async () => {
+  tables['uni-id-users'][0].password = 'mock-existing-hash'
+  tables['uni-id-users'][0].mobile = '13800138000'
+  const result = await registrationApi('mock-member-token').setPwd({ password: 'Mock123456', code: '123456' })
+  expect(result.errCode).toBe('PASSWORD_ALREADY_SET')
+  expect(uniCloudTest.db.collection('opendb-verify-codes').get).not.toHaveBeenCalled()
+  expect(uniCloudTest.db.collection('uni-id-users').update).not.toHaveBeenCalled()
+})
+
+test('首次设置密码以条件更新防止并发覆盖，并按短信场景记录失败', async () => {
+  tables['uni-id-users'][0].mobile = '13800138000'
+  tables['uni-id-users'][0].mobile_confirmed = 1
+  const logs = uniCloudTest.db.collection('uni-id-log')
+  const codes = uniCloudTest.db.collection('opendb-verify-codes')
+  codes.get.mockResolvedValueOnce({ data: [] })
+  const object = registrationApi('mock-member-token')
+  await object.setPwd({ password: 'Mock123456', code: '123456' })
+  expect(logs.add).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: 'set-pwd-by-sms', state: 0 }) }))
+  codes.get.mockResolvedValueOnce({ data: [{ _id: 'mock-code' }] })
+  codes.update.mockResolvedValue({ updated: 1 })
+  uniCloudTest.db.collection('uni-id-users').update.mockResolvedValueOnce({ updated: 0 })
+  const result = await object.setPwd({ password: 'Mock123456', code: '123456' })
+  expect(result.errCode).toBe('PASSWORD_SET_CONFLICT')
+  expect(uniCloudTest.db.collection('uni-id-users').update).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ _id: 'mock-member', password: expect.anything(), mobile: '13800138000', mobile_confirmed: 1 }) }))
+})
+
+test('无密码账号验证短信后首次设置成功并记录对应日志', async () => {
+  tables['uni-id-users'][0].mobile = '13800138000'
+  tables['uni-id-users'][0].mobile_confirmed = 1
+  const codes = uniCloudTest.db.collection('opendb-verify-codes')
+  codes.get.mockResolvedValue({ data: [{ _id: 'mock-code' }] })
+  codes.update.mockResolvedValue({ updated: 1 })
+  uniCloudTest.db.collection('uni-id-users').update.mockResolvedValue({ updated: 1 })
+  const result = await registrationApi('mock-member-token').setPwd({ password: 'Mock123456', code: '123456' })
+  expect(result.errCode).toBe(0)
+  expect(uniCloudTest.db.collection('uni-id-users').update).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ _id: 'mock-member', password: expect.anything(), mobile: '13800138000', mobile_confirmed: 1 }) }))
+  expect(uniCloudTest.db.collection('uni-id-log').add).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: 'set-pwd-by-sms', state: 1 }) }))
+})
+
+test('未绑定或未确认的手机号不能设置密码', async () => {
+  const user = tables['uni-id-users'][0]
+  for (const [mobile, confirmed] of [[undefined, 1], ['', 1], ['13800138000', undefined], ['13800138000', 0]]) {
+    user.mobile = mobile
+    user.mobile_confirmed = confirmed
+    expect((await registrationApi('mock-member-token').setPwd({ password: 'Mock123456', code: '123456' })).errCode).toBe('MOBILE_NOT_CONFIRMED')
+  }
+  expect(uniCloudTest.db.collection('opendb-verify-codes').get).not.toHaveBeenCalled()
+  expect(uniCloudTest.db.collection('uni-id-users').update).not.toHaveBeenCalled()
+})
+
+test('短信验证后手机号或确认状态发生变化时不更新密码', async () => {
+  const user = tables['uni-id-users'][0]
+  const codes = uniCloudTest.db.collection('opendb-verify-codes')
+  const users = uniCloudTest.db.collection('uni-id-users')
+  codes.get.mockResolvedValue({ data: [{ _id: 'mock-code' }] })
+  for (const change of [{ mobile: '13900139000' }, { mobile_confirmed: 0 }]) {
+    user.mobile = '13800138000'
+    user.mobile_confirmed = 1
+    codes.update.mockImplementation(() => { Object.assign(user, change); return { updated: 1 } })
+    users.update.mockImplementation(query => ({ updated: query.where.mobile === user.mobile && query.where.mobile_confirmed === user.mobile_confirmed ? 1 : 0 }))
+    expect((await registrationApi('mock-member-token').setPwd({ password: 'Mock123456', code: '123456' })).errCode).toBe('PASSWORD_SET_CONFLICT')
+  }
+})
+
 test('updateUser 阻止本人禁用和去掉 admin，允许普通资料更新', async () => {
   tables['uni-id-users'][0].role = ['admin']
   const object = registrationApi('mock-admin-token')

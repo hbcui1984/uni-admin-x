@@ -57,6 +57,7 @@ const LOG_TYPE = {
   REGISTER: 'register',
   RESET_PWD_BY_SMS: 'reset-pwd',
   RESET_PWD_BY_EMAIL: 'reset-pwd',
+  SET_PWD_BY_SMS: 'set-pwd-by-sms',
   BIND_MOBILE: 'bind-mobile',
   BIND_WEIXIN: 'bind-weixin',
   BIND_QQ: 'bind-qq',
