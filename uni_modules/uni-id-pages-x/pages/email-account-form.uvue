@@ -1,0 +1,128 @@
+<template>
+	<view class="account-page">
+		<view class="account-brand">
+			<image class="account-logo" src="/static/logo.png" mode="aspectFit" />
+			<text class="account-brand-name">uni-admin-x</text>
+		</view>
+		<view class="form">
+			<text class="account-title">{{ register ? '邮箱注册' : '邮箱找回密码' }}</text>
+			<text v-if="!enabled" class="account-note">{{ blockedMessage }}</text>
+			<template v-else>
+				<uni-id-pages-x-input class="my-input" v-model="data.email" placeholder="请输入邮箱" />
+				<uni-id-pages-x-input v-if="register" class="my-input" v-model="data.nickname" placeholder="昵称（可选）" />
+				<uni-id-pages-x-input class="my-input" v-model="data.password" :password="true" placeholder="请输入密码" />
+				<uni-id-pages-x-input class="my-input" v-model="data.password2" :password="true" placeholder="请再次输入密码" />
+				<uni-captcha class="my-input" ref="sendCaptchaRef" scene="send-email-code" v-model="data.sendCaptcha" />
+				<uni-id-pages-x-input class="my-input" v-model="data.code" :maxlength="6" placeholder="请输入邮箱验证码" />
+				<button class="uni-btn" :disabled="sending || submitting || remaining > 0" @click="sendCode">{{ remaining > 0 ? '重新发送（' + remaining + '秒）' : '获取邮箱验证码' }}</button>
+				<uni-id-pages-x-agreements v-if="register" class="agreements-box" ref="agreementsRef" scope="register" />
+				<button class="uni-btn" type="primary" :loading="submitting" :disabled="submitting || sending" @click="submit">{{ register ? '注册' : '重置密码' }}</button>
+			</template>
+			<text class="account-link" @click="toLogin">返回登录</text>
+		</view>
+		<uni-popup-captcha v-if="enabled && !register" ref="resetCaptchaRef" scene="reset-pwd-by-email" title="请输入验证码" v-model="data.resetCaptcha" />
+	</view>
+</template>
+
+<script setup lang="uts">
+	import config from '../config.uts'
+	import { checkPassword, getAccountRedirect } from '../common/common.uts'
+	import { getAccountCloudObject, accountErrorMessage } from '../common/client-cloud.uts'
+	import { accountRouteUrl, accountLoginPath } from '../common/account-route'
+	import { state } from '../store.uts'
+
+	type EmailResponse = { errCode : number }
+	const props = defineProps<{ register : boolean }>()
+	const enabled = config.getBoolean('emailEnabled') == true && (!props.register || config.getBoolean('allowPublicRegister') == true)
+	const blockedMessage = config.getBoolean('emailEnabled') != true
+		? '当前未开通邮箱服务，请联系系统管理员。'
+		: '当前未开放自助注册，请联系系统管理员。'
+	const data = reactive({ email: '', nickname: '', password: '', password2: '', sendCaptcha: '', code: '', resetCaptcha: '' })
+	const sendCaptchaRef = ref<UniCaptchaComponentPublicInstance | null>(null)
+	const resetCaptchaRef = ref<UniPopupCaptchaComponentPublicInstance | null>(null)
+	const agreementsRef = ref<UniIdPagesXAgreementsComponentPublicInstance | null>(null)
+	const sending = ref(false)
+	const submitting = ref(false)
+	const remaining = ref(0)
+	let timer : number = 0
+	let sentEmail = ''
+	onUnmounted(() => { if (timer != 0) clearInterval(timer) })
+	function toLogin() {
+		if (!sending.value && !submitting.value) uni.redirectTo({ url: accountRouteUrl(accountLoginPath, getAccountRedirect()) })
+	}
+	function validEmail() : boolean {
+		data.email = data.email.trim()
+		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
+			uni.showToast({ title: '请输入有效的邮箱地址', icon: 'none' })
+			return false
+		}
+		return true
+	}
+	async function sendCode() {
+		if (!enabled || sending.value || submitting.value || remaining.value > 0 || !validEmail()) return
+		if (data.sendCaptcha.length != 4) {
+			uni.showToast({ title: '请输入图形验证码', icon: 'none' })
+			return
+		}
+		sending.value = true
+		const email = data.email
+		try {
+			const result = await getAccountCloudObject('uni-id-co').sendEmailCode<EmailResponse>({ email: email, captcha: data.sendCaptcha, scene: props.register ? 'register' : 'reset-pwd-by-email' })
+			if (result == null || result.errCode != 0) throw new Error('邮箱服务未确认发送成功')
+			sentEmail = email
+			remaining.value = 60
+			timer = setInterval(() => {
+				remaining.value--
+				if (remaining.value <= 0) { clearInterval(timer); timer = 0 }
+			}, 1000)
+			uni.showToast({ title: '验证码已发送', icon: 'none' })
+		} catch (error) {
+			data.sendCaptcha = ''
+			sendCaptchaRef.value?.getImageCaptcha(false)
+			uni.showToast({ title: accountErrorMessage(error), icon: 'none' })
+		} finally { sending.value = false }
+	}
+	async function submit() {
+		if (!enabled || submitting.value || sending.value || !validEmail()) return
+		if (data.email != sentEmail || data.code.length != 6) {
+			uni.showToast({ title: '请先获取并输入当前邮箱的验证码', icon: 'none' })
+			return
+		}
+		const passwordCheck = checkPassword(data.password)
+		if (passwordCheck.getBoolean('pass') != true) {
+			uni.showModal({ content: passwordCheck.getString('errMsg'), showCancel: false })
+			return
+		}
+		if (data.password != data.password2) {
+			uni.showToast({ title: '两次输入的密码不一致', icon: 'none' })
+			return
+		}
+		if (props.register && data.nickname.length > 0 && (data.nickname.indexOf('@') != -1 || /^\d+$/.test(data.nickname) || data.nickname.length > 100)) {
+			uni.showToast({ title: '昵称格式不正确', icon: 'none' })
+			return
+		}
+		if (props.register && state.pendingAgreements) {
+			agreementsRef.value?.showPopupAgreements(() => { if (!state.pendingAgreements) void submit() })
+			return
+		}
+		submitting.value = true
+		try {
+			const co = getAccountCloudObject('uni-id-co')
+			const result = props.register
+				? await co.registerUserByEmail<EmailResponse>({ email: data.email, nickname: data.nickname, password: data.password, code: data.code })
+				: await co.resetPwdByEmail<EmailResponse>({ email: data.email, password: data.password, code: data.code, captcha: data.resetCaptcha })
+			if (result == null || result.errCode != 0) throw new Error('账号服务未确认操作成功')
+			uni.showToast({ title: props.register ? '注册成功，请登录' : '密码已重置，请登录', icon: 'none' })
+			uni.redirectTo({ url: accountRouteUrl(accountLoginPath, getAccountRedirect()) })
+		} catch (error) {
+			const cloudError = error as UniCloudError
+			if (!props.register && (cloudError.errCode == 'uni-id-captcha-required' || cloudError.code == 'uni-id-captcha-required')) resetCaptchaRef.value?.open(() => { void submit() })
+			else uni.showToast({ title: accountErrorMessage(error), icon: 'none' })
+		} finally { submitting.value = false }
+	}
+</script>
+
+<style lang="scss" scoped>
+	@import url("/uni_modules/uni-id-pages-x/common/common.scss");
+	@import url("/uni_modules/uni-id-pages-x/common/account.scss");
+</style>

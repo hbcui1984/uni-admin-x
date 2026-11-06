@@ -1,0 +1,7 @@
+<template>
+	<email-account-form :register="false" />
+</template>
+
+<script setup lang="uts">
+	import EmailAccountForm from '../email-account-form.uvue'
+</script>

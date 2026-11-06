@@ -7,6 +7,7 @@
 		<view v-if="!smsEnabled" class="form">
 			<text class="account-title">找回密码</text>
 			<text class="account-note">当前未开通短信找回，请联系系统管理员重置后台账号密码。</text>
+			<text class="account-link" @click="toEmailRetrieve">{{ emailEnabled ? '通过邮箱找回密码' : '邮箱找回密码（服务未开通）' }}</text>
 			<button class="uni-btn" type="primary" @click="toLogin">返回登录</button>
 		</view>
 		<view v-else class="form">
@@ -19,6 +20,7 @@
 			<uni-id-pages-x-input class="my-input" :border="false" v-model="data.password2" placeholder="请再次输入密码" ref="password2Ref"
 				:password="true" @confirm="doNext"></uni-id-pages-x-input>
 			<button class="uni-btn" type="primary" :loading="submitting" :disabled="submitting || data.password.length == 0 || data.password2.length == 0" @click="doNext">{{ submitting ? '重置中' : '下一步' }}</button>
+			<text class="account-link" @click="toEmailRetrieve">{{ emailEnabled ? '通过邮箱找回密码' : '邮箱找回密码（服务未开通）' }}</text>
 		</view>
 
 		<!-- 多次重置输入错误时，需要额外输入图形验证码 （悬浮） -->
@@ -27,14 +29,20 @@
 </template>
 
 <script setup lang="uts">
-	import { checkPassword } from '@/uni_modules/uni-id-pages-x/common/common.uts';
+	import { checkPassword, getAccountRedirect } from '@/uni_modules/uni-id-pages-x/common/common.uts';
+	import { accountRouteUrl, accountEmailRetrievePath, accountLoginPath, normalizeAccountRoute } from '../../common/account-route';
 	import config from '@/uni_modules/uni-id-pages-x/config.uts';
 	import { getAccountCloudObject, accountErrorMessage } from '@/uni_modules/uni-id-pages-x/common/client-cloud.uts';
 	const smsEnabled = config.getBoolean('smsEnabled') == true
+	const emailEnabled = config.getBoolean('emailEnabled') == true
 	const submitting = ref(false)
 	const completed = ref(false)
 	function toLogin() {
-		uni.redirectTo({ url: '/uni_modules/uni-id-pages-x/pages/login/login' })
+		uni.redirectTo({ url: accountRouteUrl(accountLoginPath, getAccountRedirect()) })
+	}
+	function toEmailRetrieve() {
+		if (submitting.value) return
+		uni.navigateTo({ url: accountRouteUrl(accountEmailRetrievePath, getAccountRedirect()) })
 	}
 
 	const smsCodeRef = ref<UniIdPagesXSmsCodeComponentPublicInstance | null>(null)
@@ -110,7 +118,7 @@
 					icon: 'none'
 				})
 				setTimeout(() => {
-					uni.navigateBack()
+					toLogin()
 				}, 1500)
 		} catch (err) {
 				const error = err as UniCloudError
@@ -127,6 +135,7 @@
 	}
 
 	onLoad((query : OnLoadOptions) => {
+		normalizeAccountRoute(query)
 		if (!smsEnabled) return
 		const mobile = query["mobile"]
 		if (mobile != null) {

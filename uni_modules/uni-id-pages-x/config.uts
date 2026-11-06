@@ -3,6 +3,8 @@ export default {
   "allowPublicRegister":false,
   // 仅在短信服务配置完成后开启，独立于账号密码登录。
   "smsEnabled":false,
+  // 正式邮件服务部署并禁用测试码后才能开启。
+  "emailEnabled":false,
   // 注销的跨会话撤销与最后管理员保护完成服务端联调后，才可开放。
   "allowAccountDeactivation":false,
   "agreements":{

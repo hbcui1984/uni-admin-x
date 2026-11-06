@@ -8,6 +8,7 @@
 			<text class="account-title">{{ blockedMessage }}</text>
 			<button class="uni-btn" @click="toLogin">返回登录</button>
 			<button v-if="registrationCheckFailed" class="uni-btn" @click="checkAdminRegistration">重新检查</button>
+			<text class="account-link" @click="toEmailRegister">{{ emailEnabled ? '邮箱注册（未开放自助注册）' : '邮箱注册（服务未开通，自助注册未开放）' }}</text>
 		</view>
 		<view v-else class="form">
 			<text class="account-title">注册账号</text>
@@ -38,6 +39,7 @@
 			<uni-id-pages-x-agreements class="agreements-box" ref="agreementsRef" scope="register" />
 
 			<button class="uni-btn" @click="registerBefore" type="primary" :loading="submitting" :disabled="submitting || data.username.trim().length == 0 || data.password.length == 0 || data.password2.length == 0 || data.captcha.length != 4">{{ submitting ? '注册中' : '注册并登录' }}</button>
+			<text class="account-link" @click="toEmailRegister">{{ emailEnabled ? '邮箱注册' : '邮箱注册（服务未开通）' }}</text>
 			<text class="account-link" @click="toLogin">返回登录</text>
 		</view>
 	</view>
@@ -47,10 +49,11 @@
 	import { loginSuccess, checkPassword, getAccountRedirect } from '@/uni_modules/uni-id-pages-x/common/common.uts';
 	import { getAccountCloudObject, accountErrorMessage } from '@/uni_modules/uni-id-pages-x/common/client-cloud.uts';
 	import { state } from '@/uni_modules/uni-id-pages-x/store.uts';
-	import { normalizeAccountRoute, accountRouteUrl, accountLoginPath } from '../../common/account-route';
+	import { normalizeAccountRoute, accountRouteUrl, accountLoginPath, accountEmailRegisterPath } from '../../common/account-route';
 	import config from '../../config.uts';
 	import { adminRegisterPath, getAdminRegistrationStatus, firstAdminRegistrationOpen, registrationStatusKnown } from '@/common/admin-registration';
 	const allowPublicRegister = config.getBoolean('allowPublicRegister') == true
+	const emailEnabled = config.getBoolean('emailEnabled') == true
 	const blockedMessage = ref('正在检查管理员状态…')
 	const registrationCheckFailed = ref(false)
 	let registrationActive = true
@@ -99,6 +102,10 @@
 	function toLogin() {
 		if (submitting.value) return
 		uni.redirectTo({ url: accountRouteUrl(accountLoginPath, getAccountRedirect()) })
+	}
+	function toEmailRegister() {
+		if (submitting.value) return
+		uni.navigateTo({ url: accountRouteUrl(accountEmailRegisterPath, getAccountRedirect()) })
 	}
 	const data = reactive({
 		username: "",
