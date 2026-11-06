@@ -20,8 +20,8 @@
 ### 1.1 覆盖口径
 
 - 旧主包 23 条、`pages/system` 19 条、`pages/uni-stat` 26 条，合计 **68 条页面路由**，下文 R01 至 R68 一一对应；窗口配置路径不计入。
-- 按实际 `pages.json` 重新核对，当前为 **34 条活动路由：主包 16 条、系统分包 18 条**。按独立页面一一对账，旧 68 路由中 **32 条有同名或替代注册页面，36 条缺少独立注册页面映射**；当前独立昵称页和 setup 是旧基线外的两个页面，合并到登录页的短信/免密子流程不重复计为独立映射。R17 首任 admin 旧路由改映射 public `uni_modules/uni-id-pages-x/pages/register/register-admin`，不再映射 setup；改密映射 protected `pages/account/change-password`，应用编辑复用 `pages/system/app/add`（query 的 id 是 AppID，不是数据库 _id）。
-- safety、demo/icons、demo/table 已注册；demo 配置登录保护，导航允许两个 demo 和只读 safety，侧栏增加“组件示例”静态入口，顶栏接通改密/基础菜单维护，profile 接通改密。登录、专用管理员注册、普通注册、找回、协议页和 setup 为公开路由；setup 在页面内按管理员状态/身份分流，菜单写入仍需服务端鉴权。**public 普通注册默认关闭**，注销页仍注册但安全禁用，因此路由映射数不是可用功能率。
+- 按实际 `pages.json` 重新核对，当前为 **36 条活动路由：主包 18 条、系统分包 18 条**。按独立页面一一对账，旧 68 路由中 **34 条有同名或替代注册页面，34 条缺少独立注册页面映射**；本轮仅 R18/R20 邮箱两页新增独立映射。当前独立昵称页和 setup 是旧基线外的两个页面，R14/R15 合并到登录页的短信/免密子流程、R22 与 R06 共用改密页的首次设密均不重复计为独立映射；无独立映射不等于没有共享功能实现。R17 首任 admin 旧路由改映射 public `uni_modules/uni-id-pages-x/pages/register/register-admin`，不再映射 setup；改密/首次设密共用 protected `pages/account/change-password`，应用编辑复用 `pages/system/app/add`（query 的 id 是 AppID，不是数据库 _id）。
+- safety、demo/icons、demo/table 已注册；demo 配置登录保护，导航允许两个 demo 和只读 safety，侧栏增加“组件示例”静态入口，顶栏接通改密/基础菜单维护，profile 接通改密/设密。登录、专用管理员注册、普通及邮箱注册、手机及邮箱找回、协议页和 setup 为公开路由；setup 在页面内按管理员状态/身份分流，菜单写入仍需服务端鉴权。**public 普通注册默认关闭**，邮箱两页已接入但邮箱服务关闭、服务端发码拒绝，注销页仍注册但前后端安全禁用，因此路由映射数不是可用功能率。
 - `uni-stat` 26 页、升级中心 3 页、uni-portal 仍尚未迁移；safety 已有新实现和前端验收。保留 `.vue`、SDK、schema、云函数及图表组件不表示其所属旧业务可用。
 - 当前真实云端部署、实际 AppID 授权、索引和数据均未检查。不得用文件存在、模拟响应、编译成功或历史截图代替业务验收。
 
@@ -58,6 +58,12 @@
 
 **边界仍未关闭：**没有部署或真实写库；身份复核、管理员存活检查和 remove 不在事务或全局锁内，仍有并发竞态。其他云函数、直接 clientDB、注销及其他降权入口没有统一最后管理员保护。删除错误可能已部分生效，失败响应不代表零删除，不自动重试或退回 JQL。角色/权限/标签删除仍缺前端引用检查、解绑和关联影响提示，固定 admin 记录策略及这些模块按钮权限仍为旧版遗留独立项，不在本轮宣告完成。
 
+### 1.5 账号流程补充状态
+
+邮箱注册及找回两条独立路由和入口已接入，默认关闭邮箱服务；服务端发码明确拒绝，未接入真实邮件发送。普通注册仍按标准管理端默认关闭，前端开关不是服务端权限约束。首次设密复用既有 `pages/account/change-password`，按 `getAccountInfo/isPasswordSet` 区分原密码改密和已验证手机号的短信验证码设密，不新增路由或独立页面映射。短信默认关闭；后端拒绝无模板的固定测试码，并在条件更新时检查密码及手机号状态。密码状态查询失败可回退至原密码修改。账号注销仍由前后端共同拒绝，不能视为已完成或安全开放。
+
+据账号功能开发记录，后端 54 项纯 mock 通过；本轮文档整理未重跑。未发送邮件或短信、未部署、未真实写库，本轮新增前端的实际编译及浏览器运行仍待验证，既有改密交互证据不覆盖新增状态分流/设密分支。此前数据库中的测试码不会自动清除；完整服务和真实联调仍未完成。
+
 ## 2. 高优先级发现
 
 下列均为静态源码事实或明确标出的风险。P0/P1 是修复/验收优先级，不表示已实施远程攻击或已复现生产事故。
@@ -76,14 +82,14 @@
 | F10 / P2（隐藏组件遗留） | `components/batch-sms/batch-sms.vue:203`、`:349`、`:361` | 已有模板时 loadSmsTemplate 立即返回，导入成功也不刷新；filtered 重置遗漏。缺陷仍保留，当前组件不挂载，不能把隐藏视作修复。 | 连续两次导入模板立即反映新增/修改；关闭重开恢复默认跨分页状态，不残留接收范围。 |
 | F11 / P2 | `common/admin-crud.ts:285`、`:369`；`components/download-excel/download-excel.vue:145`、`:191` | 导出数据来自本次加载页，不是所有筛选结果；XLS 以 HTML 拼接未转义单元格，CSV 以公式形式包装值。不能宣称全量导出或安全处理任意内容。 | 标明/确认当前页口径，特殊 HTML、公式起始字符、引号、换行、长手机号、中文、空值经电子表格打开检查，无注入和精度丢失。 |
 | F12 / P2（404 基本回退已验证，其余仍缺） | `App.uvue:25`；旧 `App.vue:22`、`:29`、`:56`、`:59`；`main.ts:10` | 已新增 onPageNotFound → pages/error/404，使用真实 SDK 确认匿名直达一个不存在的 URL 显示“页面不存在”且无页面异常；完整刷新及不同登录态分支仍需扩展验收。主题初始化、嵌入、扩展存储初始化、全局调试插件仍未恢复，保留 SDK 不产生这些行为。 | A06 扩展验证刷新、登录状态与导航失败分支；其余按 A06/A07 保留迁移和验收项，不直接安装整个旧 plugin。 |
-| F13 / P1（安全禁用，后端差距未关闭） | `uni_modules/uni-id-pages-x/uniCloud/cloudfunctions/uni-id-co/module/account/close-account.js:13`；同云对象 `lib/utils/update-user-info.js:7`；`uni_modules/uni-id-pages-x/pages/userinfo/deactivate/deactivate.uvue:3`、`:39` | 后端最后 admin、跨会话 token 及文案/数据保留差距仍在。当前 allowAccountDeactivation=false，个人页明确“暂未开放”，直达注销页只显示说明/返回，不挂载写表单且 handler 有开关检查。不是正常开放，也不是后端已修复；UI 开关不能代替直接 API 的服务端约束。 | 保持禁用；先补最后 admin/跨会话失效与数据政策，再另获授权用可销毁账号验收；当前集成验 UI 不产生 closeAccount 调用。 |
+| F13 / P1（安全禁用，后端差距未关闭） | `uni_modules/uni-id-pages-x/uniCloud/cloudfunctions/uni-id-co/module/account/close-account.js:2`；同云对象 `lib/utils/update-user-info.js:7`；`uni_modules/uni-id-pages-x/pages/userinfo/deactivate/deactivate.uvue:3`、`:39` | 最后 admin、跨会话 token 及文案/数据保留差距仍在。当前 allowAccountDeactivation=false，个人页明确“暂未开放”，直达注销页只显示说明/返回，不挂载写表单且 handler 有开关检查；后端 closeAccount 也直接返回 ACCOUNT_DEACTIVATION_DISABLED。服务端拒绝是关闭措施，不代表注销安全能力已补齐，且未核实云端部署版本。 | 保持前后端关闭，不能仅改前端开关开放；先补最后 admin/跨会话失效与数据政策，再另获授权用可销毁账号验收；既有集成记录仅支持当时 UI 不产生 closeAccount 调用。 |
 | F14 / P1（登记入口已验证前端，写入待确认） | 旧 `pages/system/app/list.vue:209`；新 `pages/system/app/list.uvue:135`；`pages/system/app/add.uvue:136` | “登记当前后台”确认后跳 app/add?current=1，预填当前应用和 app_type=1；实际导航/返回及 mock 交互已验证。仅用户核对保存才写库，没有自动登记或按列表分页静默写入；尚无真实保存。 | 空表、已登记、重复保存、筛选/分页与失败重试须验真实唯一性及反馈；真实写入待明确确认，不得自动提交真实 AppID。 |
 
 账号云对象证据路径前缀为 `uni_modules/uni-id-pages-x/uniCloud/cloudfunctions/uni-id-co/`，表中 N 为 `uni_modules/uni-id-pages-x/pages/`。初始化公共模块前缀为 `uniCloud-alipay/cloudfunctions/common/`。F04 保留全空间数组包含查询和共享一次性锁；当前 29 项 mock、146 前端断言及本地只读入口检查不能代替真实并发、故障恢复与写入验收，旧 21 项仅为历史证据。
 
 ## 3. 逐旧路由对照：68 条
 
-表中“同路径”表示旧路由字符串不变但活动实现为对应 `.uvue`；“无”表示当前 `pages.json` 未注册，不是旧文件缺失。已验证的前端行为与尚缺业务验收分别注明，不能按页面整体覆盖子功能缺口。下表路由以仓库相对形式书写，实际导航时加 `/`。
+表中“同路径”表示旧路由字符串不变但活动实现为对应 `.uvue`；“无”表示当前 `pages.json` 未注册该旧页面对应的独立路由，不是旧文件缺失。共用页面的功能在行内注明，不重复计入独立页面映射。已验证的前端行为与尚缺业务验收分别注明，不能按页面整体覆盖子功能缺口。下表路由以仓库相对形式书写，实际导航时加 `/`。
 
 ### 3.1 主包与账号：R01-R23
 
@@ -96,23 +102,23 @@
 | R03 | `pages/demo/table/table`（14） | 同路径已注册并登录保护；侧栏可达，静态搜索/排序/分页/页大小/选择 | 部分实现；静态演示已验证前端 | 实际入口/返回和所测桌面/窄屏已验证。新增/编辑/单删/批删仍 disabled 标未实现；旧按钮本来无业务写入功能，不能将演示计为业务 CRUD。 |
 | R04 | `Ologin/login-withpwd`（20） | `Nlogin/login`，密码组件调用 `login`；按输入分用户名/手机/邮箱 | 已迁移待真实联调 | 错密触发验证码、刷新验证码、禁用账号、授权应用、登录过期与原目标 query 回跳；首次 admin 入口另见 R17。A01/A03。 |
 | R05 | `pages/error/404`（28） | 同路径，提示与返回首页；App.uvue:25 已加 onPageNotFound 重定向 | 部分实现（基本未知路径回退已验证） | 已确认匿名直达一个不存在 URL 会显示 404 且无 JS 异常；直接刷新、不同登录态和导航失败分支仍需扩展验收，不推断全局错误路由均通过。F12。 |
-| R06 | `Ouserinfo/change_pwd/change_pwd`（34） | protected `pages/account/change-password`；顶栏/profile 入口，updatePwd 后清密码、退出重登 | 已迁移待真实联调；入口/表单已验证前端 | 37 项 app/pwd 与集成验证覆盖实际入口/返回和 mock 交互；真实改密、旧 token 失效仍待用户明确确认。不是重置他人密码，也不替代首次设密。A03。 |
+| R06 | `Ouserinfo/change_pwd/change_pwd`（34） | protected `pages/account/change-password`；顶栏/profile 入口，按账号状态分流，已设密调用 updatePwd 后清密码、退出重登；首次设密共页见 R22 | 已迁移待真实联调；既有改密入口/表单有前端证据 | 37 项 app/pwd 与集成验证为此前入口/返回和 mock 交互证据，不覆盖本轮新增状态分流/设密分支；真实改密、旧 token 失效仍待用户明确确认。A03。 |
 | R07 | `uni_modules/uni-upgrade-center/pages/version/list`（40） | 无，应用列表“版本”disabled 标未迁移 | 尚未迁移 | 应用切换、搜索/筛选/排序/分页、详情、新版、批删、清理废弃资源未开放。A08。 |
 | R08 | `uni_modules/uni-upgrade-center/pages/version/add`（46） | 无 | 尚未迁移 | 原生包/WGT、Vapor、平台、版本、最低版本、提示/静默/强制、上线、上传和 SHA256 均未接入。A08。 |
 | R09 | `uni_modules/uni-upgrade-center/pages/version/detail`（52） | 无 | 尚未迁移 | 详情只读、进入编辑、取消、保存、删除、资源/下载和校验信息未开放。A08。 |
-| R10 | `Ouserinfo/deactivate/deactivate`（58） | `Nuserinfo/deactivate/deactivate` 仍注册；开关 false，只显示未开放说明/返回，不挂载写表单 | 部分实现（安全禁用，尚未开放） | F13 后端跨会话 token、最后 admin、文案/数据保留差距仍在；历史注销交互测试不代表当前开放。当前先验无 closeAccount 调用，解除禁用需独立安全验收及写入授权。A03。 |
-| R11 | `Ouserinfo/userinfo`（64） | `Nuserinfo/userinfo`，头像/昵称/邮箱/可选手机/改密/退出；注销明确未开放 | 部分实现 | F05 基础资料先赋值/实名失败降级及邮箱已补；改密入口已接，getAccountInfo/isPasswordSet 区分未设密账号、旧头像兼容、真实读写与实名可发现入口仍待处理。A03。 |
+| R10 | `Ouserinfo/deactivate/deactivate`（58） | `Nuserinfo/deactivate/deactivate` 仍注册；开关 false，只显示未开放说明/返回，不挂载写表单；后端 closeAccount 直接拒绝 | 部分实现（前后端安全禁用，尚未开放） | F13 跨会话 token、最后 admin、文案/数据保留差距仍在；历史注销交互测试不代表当前开放。需先验 UI 无 closeAccount 调用及服务端关闭，解除禁用仍需独立安全验收及写入授权。A03。 |
+| R11 | `Ouserinfo/userinfo`（64） | `Nuserinfo/userinfo`，头像/昵称/邮箱/可选手机/设密或改密/退出；注销明确未开放 | 部分实现 | F05 基础资料先赋值/实名失败降级及邮箱已补；已接 getAccountInfo/isPasswordSet 区分设密/改密，查询失败可重试或回退原密码修改，本轮新增状态交互尚未确认实际编译/浏览器运行。旧头像兼容、真实读写与实名可发现入口仍待处理。A03。 |
 | R12 | `Ouserinfo/bind-mobile/bind-mobile`（70） | `Nuserinfo/bindMobile/bindMobile`；开关关闭只提示 | 待配置 | 配置 `smsEnabled`、验证码和短信服务后仍须验收发送频控、重复手机号、绑定结果、过期 token、失败重试/提交防重。旧 APP 一键绑号/微信分支不等价。 |
 | R13 | `Ouserinfo/cropImage/cropImage`（76） | 无；头像组件 `chooseImage({crop})` 后上传 | 部分实现 | x 分支不进入旧裁剪页，不能据 crop 参数声称 Web 可拖拽裁剪/旋转/缩放与旧体验等价；取消、格式、云图显示、持久化和孤儿文件需验。A03/A07。 |
 | R14 | `Ologin/login-smscode`（82） | 合并到 `Nlogin/login?type=smsCode` 的组件；默认不在登录类型中 | 待配置 | 开关、登录类型、图形/短信验证码、发送频控、登录即注册、绑定/授权策略、回跳均待联调；只改 URL 不构成可用入口。 |
 | R15 | `Ologin/login-withoutpwd`（90） | 无独立路由；新登录页承载部分方式 | 部分实现 | 旧免密入口/平台筛选/一键登录/第三方授权并未等价恢复；当前 Web OAuth 实现非 APP 直接不可用，见账号细分表。 |
 | R16 | `Oregister/register`（98） | `Nregister/register` 仍注册；allowPublicRegister=false，无 admin 且服务器确认可注册时旧书签转 `Nregister/register-admin`，已有 admin 只提示登录 | 部分实现（普通自助注册默认关闭） | 登录页无普通注册链接或 setup 链接；异常/unknown/guard 不开注册。原图形验证码/双密码/registerUser 分支保留，需明确授权后才能启用和真实联调，不能用历史注册 mock 或路由存在认定当前开放。A01/A03。 |
 | R17 | `Oregister/register-admin`（106） | public `Nregister/register-admin`；纯状态检查、专用表单调用 registerAdmin，成功清注册会话返回登录 | 已验证前端及真实本地入口；真实创建待确认 | 无 admin 且服务器确认可注册才展示入口；有 admin 隐藏注册保留登录，invalid-token 不挡状态，异常/unknown/guard 关闭。146 前端隔离断言、29 后端 mock 通过，真实注册0、无部署。不自动建菜单、不认领；9 菜单/24 权限为独立可选维护。A01/F04。 |
-| R18 | `Oregister/register-by-email`（114） | 无 | 尚未迁移 | 邮箱验证码发送、倒计时、图形验证码、邮箱格式、`registerUserByEmail`、返回/登录链路无前端替代；保留后端方法不是可用功能。 |
-| R19 | `Oretrieve/retrieve`（122） | `Nretrieve/retrieve`，默认说明联系管理员；开关启用才 `resetPwdBySms` | 待配置 | 当前“忘记密码”可点但不重置密码。手机参数、密码强度、双输、验证码失效、频控、成功回登录和回跳需验。 |
-| R20 | `Oretrieve/retrieve-by-email`（130） | 无；新忘记密码虽可带 email query，页面只处理 mobile | 尚未迁移 | 邮箱重置页面、`resetPwdByEmail` 和返回登录流程缺失；邮箱 query 不能视作邮箱找回实现。 |
+| R18 | `Oregister/register-by-email`（114） | public `Nregister/register-by-email` 已注册；普通注册页接入入口，共享邮箱表单已接 sendEmailCode/registerUserByEmail 和返回登录；默认只显示关闭说明 | 部分实现（页面已接入，服务未开放） | emailEnabled=false、allowPublicRegister=false；后端邮箱发码明确拒绝，尚无真实邮件发送。实际编译/浏览器、邮箱格式/占用、图形验证码、倒计时、密码双输及返回链路待验；邮件服务仍需接入，验证码有效期/频控和服务端注册权限仍待核实和真实联调。 |
+| R19 | `Oretrieve/retrieve`（122） | `Nretrieve/retrieve`，默认说明联系管理员并提供邮箱找回入口；短信开关启用才 `resetPwdBySms` | 待配置 | 当前“忘记密码”可点但默认不重置密码，邮箱服务也未开放（R20）。手机参数、密码强度、双输、验证码失效、频控、成功回登录和回跳需验。 |
+| R20 | `Oretrieve/retrieve-by-email`（130） | public `Nretrieve/retrieve-by-email` 已注册；找回页接入入口，共享邮箱表单已接 sendEmailCode/resetPwdByEmail 和返回登录；默认只显示服务未开通 | 部分实现（页面已接入，服务未开放） | emailEnabled=false，服务端邮箱发码明确拒绝。实际编译/浏览器、邮件发送及有效期/频控、邮箱参数/验证码、密码确认、失败重试和成功回登录/回跳仍待验，不据路由及调用链宣称找回可用。 |
 | R21 | `Ocommon/webview/webview`（138） | `Ncommon/webview/webview`，以 `http` 前缀判断后载入 `web-view` | 已迁移待真实联调 | 协议 URL 默认空且场景关闭；合法 HTTPS、非法协议、URL 编码、标题、关闭返回、站点 iframe/CSP 限制需验证。无联网证据。 |
-| R22 | `Ouserinfo/set-pwd/set-pwd`（147） | 无 | 尚未迁移 | 免密账号首次设置密码、短信校验、允许跳过、携带登录类型/目标页链路未恢复；改密页不自动替代无旧密码的设置密码。 |
+| R22 | `Ouserinfo/set-pwd/set-pwd`（147） | 无独立路由；与 R06 共用 protected `pages/account/change-password`，未设密时以已验证手机号和短信验证码调用 setPwd | 部分实现（共页流程已接入，短信默认关闭） | 仅为共享功能映射，不新增独立页面映射。smsEnabled=false，缺模板时后端拒绝发码，不生成固定测试码；setPwd 条件更新检查密码/手机号状态。实际编译/浏览器及真实设密未验证；旧允许跳过、登录类型/目标页链路未等价恢复。A03。 |
 | R23 | `Ouserinfo/realname-verify/realname-verify`（154） | `Nuserinfo/realnameAuth/realnameAuth` 已注册，但个人资料未显示入口 | 部分实现 | 使用刷脸原生相关 API，无 Web 替代或明确平台拦截；不能视作 Web 已支持。服务开通、平台支持、成功/取消/失败、字段返回契约另核实；不提交实名信息。 |
 
 ### 3.2 系统管理：R24-R42
@@ -182,17 +188,17 @@
 | 首次配置与授权 | 专用 registerAdmin 使用共享固定 ID guard；数据库基础数据单独准备，setup 仅为管理员可确认的菜单维护；guard schema 禁止客户端读写 | 已迁移待真实联调；146 前端断言/29 后端 mock 和真实本地入口已有记录 | 缺 schema/索引、写入、并发、失败锁恢复与部分菜单/权限仍待真实验收。默认认领 UI 已移除，后端 claimFirstAdmin/旧状态字段仍为非默认技术债；不导入旧账号/旧 init，不将自建维护称为旧原有流程。 |
 | 当前后台应用登记 | app/list 确认后跳 ?current=1，app/add 预填当前应用，用户保存才写 | 已迁移待真实联调 | 打开/取消无写入，已登记/重复提交由唯一约束和错误提示处理；不恢复旧版按当前分页判断缺失的静默登记。F14。 |
 | 普通注册邀请码 | 旧普通注册表单无邀请码输入；新版后端 `register-user.js:32` 仍接收 inviteCode，新前端 payload 无该字段 | 部分实现/待明确需求 | 不虚构旧可见邀请码功能；如要求保留账号插件邀请码能力，明确 query/输入来源、校验和注册后记录。 |
-| 邮箱注册/找回 | 旧独立页面调用 `registerUserByEmail/resetPwdByEmail`；新没有页面 | 尚未迁移 | 邮件服务、验证码有效期/频控、占用邮箱、图形验证、密码确认和返回链路。 |
-| 短信登录/找回/绑号 | 新 `config.uts:5` 与登录类型限制，默认不可执行 | 待配置 | 三个业务场景独立配置和验收；短信登录即注册不能绕过后台授权；配置短信不等于修复群发短信。 |
+| 邮箱注册/找回 | 新 `Nregister/register-by-email`、`Nretrieve/retrieve-by-email` 两路由及入口已接入，共享表单调用 sendEmailCode/registerUserByEmail/resetPwdByEmail；关闭时仅说明/返回登录 | 部分实现（页面已接入，服务未开放） | emailEnabled=false，普通注册另受 allowPublicRegister=false 限制；服务端发码直接拒绝。实际编译/浏览器、真实邮件服务、验证码有效期/频控、邮箱占用、图形验证、密码确认和返回链路均待验；前端开关不代替服务端注册权限。 |
+| 短信登录/找回/绑号/设密 | `config.uts:5` 的 smsEnabled=false；登录另受登录类型限制，首次设密共用改密页；后端缺模板时拒绝发码 | 待配置；首次设密共页流程已接入 | 四个业务场景独立配置和验收，不再生成无模板的固定测试码；已有测试码不会自动清除。短信登录即注册不能绕过后台授权；配置短信不等于修复群发短信。 |
 | 第三方免密 | 新 `oauth.uts:13` 仅定义微信/Apple/华为；`:79` 非 APP 返回 false；旧通用 fab 支持配置驱动的平台方式 | 目标平台不支持（当前 Web OAuth 实现）；其他旧方式尚未迁移 | 不将后端存在 QQ/支付宝/Google 等方法当作前端支持；Web 微信网页授权须独立实现与配置。APP 一键登录/Apple 不是 Web 管理端可直接恢复的按钮。 |
 | 微信手机号快捷登录 | `login.uvue:23` 有模板，但 `login():77` 只处理 OAuth 分支，无微信手机号事件参数链路 | 部分实现（默认不显示） | 不得仅加入 `loginTypes` 开启；平台条件、授权事件和服务端登录方法完整后再验收。 |
-| 首次设密与改密 | protected 改密页已接顶栏/profile，校验原密码/强度/双输，成功退出 | 设密尚未迁移；改密已验证前端、真实写入待确认 | 37 项 app/pwd 及集成验证已通过；无旧密码账号另需 setPwd，真实改密及旧 token 处置未验。 |
-| 账号资料字段 | store 已含 email，先赋基本资料再独立查询实名，profile 显示邮箱和改密入口 | 已迁移待真实联调；资料子功能部分实现 | F05 源码缺口已补；密码是否已设置、手机号开关展示、老 avatar 兼容、真实字段权限及跨账号缓存隔离继续验收。 |
+| 首次设密与改密 | 顶栏/profile 进入同一 protected `pages/account/change-password`；getAccountInfo/isPasswordSet 分流 updatePwd/setPwd，状态失败可回退原密码修改；校验强度/双输，成功退出 | 首次设密部分实现（短信默认关闭）；既有改密有前端证据，真实写入待确认 | R22 仅共享 R06 页面，不新增路由或独立映射；首次设密要求已验证手机号，服务端检查密码/手机号状态未变。37 项 app/pwd 及集成记录仅支持此前交互；新增状态分流/设密的实际编译、浏览器与真实写入、旧 token 处置仍待验。 |
+| 账号资料字段 | store 已含 email，先赋基本资料再独立查询实名，profile 显示邮箱并按 getAccountInfo/isPasswordSet 提供设密/改密入口 | 已迁移待真实联调；资料子功能部分实现 | F05 源码缺口已补；本轮密码状态分流、查询失败重试/原密码回退尚待实际编译和浏览器验证；手机号开关展示、老 avatar 兼容、真实字段权限及跨账号缓存隔离继续验收。 |
 | 昵称规则 | `setNickname.uvue:6` maxlength 为 100，`:38` 禁止 @/纯数字/超长，与注册规则对齐；修改禁止清空 | 已迁移待真实联调；前端边界有开发验收记录 | 原 25 字符缺口已补；真实 26/100 字符读回、注册可空与修改不可清空的产品差异、写库失败/缓存一致性继续保留验收。 |
 | 头像和云图 | `uni-id-pages-x-avatar.uvue:119` 选图、`:172` 上传、store 乐观更新；无等待资料写库成功反馈 | 已迁移待真实联调，裁剪部分实现 | Web blob 文件名/格式、裁剪能力、存储访问权限/临时 URL、上传后写库失败恢复、旧头像清理与刷新持久化。 |
 | 第三方绑定/解绑 | 旧 userinfo 脚本有 `bindThirdAccount`，旧模板未展示该入口；新资料页无对应 UI | 尚未迁移（脚本能力） | 区分旧隐藏方法和旧用户可见功能；如开放须单独制定平台/绑定冲突/解绑后可登录保障。 |
 | 实名认证 | 已注册路由但无资料入口；`realnameAuth.uvue:215` 调元信息、`:128` 刷脸；`:222` 对 errCode==0 分支值得核实 | 部分实现/待配置及平台核对 | 核对官方 API 的 Web 支持/返回契约后决定平台限制，不以真实身份提交作自动验收。资料刷新不依赖认证成功，失败降级已验证前端。 |
-| 注销最后 admin/其他会话 | allowAccountDeactivation=false；profile 明确未开放，直达页不挂载写表单且 handler 拦截；后端差距仍在 | 部分实现（安全禁用，尚未开放）；F13 | UI 禁用不是直接 API 安全保障；先补最后 admin、跨会话旧 token/数据政策再考虑开放。当前不调用 closeAccount，历史 mock 不作为开放依据。 |
+| 注销最后 admin/其他会话 | allowAccountDeactivation=false；profile 明确未开放，直达页不挂载写表单且 handler 拦截；后端 closeAccount 直接拒绝 | 部分实现（前后端安全禁用，尚未开放）；F13 | 先补最后 admin、跨会话旧 token/数据政策再考虑开放，不能仅改前端开关；服务端拒绝不代表这些差距已修复或云端已部署。当前不调用 closeAccount，历史 mock 不作为开放依据。 |
 | 图形验证码 | 登录错误后弹窗、注册验证码已有接入；实际加载/刷新有历史记录 | 已验证前端（仅历史图片加载/交互）；真实提交待联调 | 过期/刷新清空、验证码错误后更新、服务断连、并发/防重与验证码校验是独立验收。 |
 | 服务协议 | 默认 scopeList 空，不显示/不拦截；启用后需两份正式 URL | 待配置；交互已验证前端（历史） | 不能称默认缺勾选框为缺陷；主动启用时空 URL 禁用勾选、阅读不自动同意、键盘操作/弹窗确认/返回表单分别验。 |
 | 会话/退出 | `common.uts:59` 尽力服务端 logout 后立即清本地；`App.uvue` 清导航 | 已迁移待真实联调 | 真实 token 失效、失联退出、浏览器返回/刷新、跨账号/跨标签页、token 更新与过期跳转。 |
@@ -275,7 +281,7 @@
 | 旧 portal 示例/托管、升级存储说明/下载 | 仅在未迁移旧页面中 | 当前不是活动坏链接，但恢复时必须重新核验，不照搬旧域名/锚点作为验收通过。 |
 | 图标演示与内置选择弹窗 | 独立 uvue 路由/静态入口已接入并验证前端；表单仍有图标复制弹窗 | 明确复制后手工粘贴，不虚报自动填图标；更多浏览器/剪贴板权限、任意 CSS 图标能力按实际范围另验。 |
 | 个人资料实名认证 | 路由有、模板无可见入口，API 平台契约待核对 | 不用“路由已注册”计为可发现功能；先决定 Web 是否开放。 |
-| 找回密码与邮箱 query | 入口可点，默认显示联系管理员；邮箱参数不被当前重置页处理 | 明确不能自助重置的原因，补邮件链路后分别验收。 |
+| 找回密码与邮箱入口 | 手机找回页提供独立邮箱找回入口；默认手机找回显示联系管理员，邮箱页显示服务未开通，服务端邮箱发码拒绝 | 分别验入口、query/目标回跳、关闭说明和后续启用流程；不将页面已接入视为邮件已发送或找回可用。 |
 
 ## 7. 可执行验收清单
 
@@ -312,11 +318,13 @@
 
 - [ ] 用户名/手机号/邮箱密码登录、错密验证码触发与刷新、登录禁用/未授权/过期、原目标嵌套 query、刷新回跳与拒绝外部回跳。
 - [ ] 普通注册默认关闭状态先验无写入；若以后获准启用，再隔离验用户名/昵称/密码边界、空昵称、重复账号、验证码错/过期/断网、防重；注册和修改昵称 100 字符上限不互相截断。
-- [ ] 改密双入口/导航及 mock 交互已验证；真实旧密码错误、新密码生效、旧密码及旧 token 处置仍待确认后验收；无密码账号另需首次设密而非强行改密。
+- [ ] 既有改密双入口/导航及 mock 交互证据仅支持当时范围，不覆盖本轮账号状态分流；真实旧密码错误、新密码生效、旧密码及旧 token 处置仍待确认后验收。
+- [ ] 首次设密与改密共用既有页面，不增加独立映射；新增分支的实际编译/浏览器尚待验证。短信默认关闭；后续分别验已验证手机号、setPwd 拒绝已有密码、密码/手机号变化冲突，以及状态查询失败后的重试/原密码回退。
 - [ ] 昵称/头像真实写库/失败不遗留本地假资料、旧头像兼容及邮箱字段权限继续验；基础资料不被实名失败阻断的前端降级已有集成证据，不代替真实账号读回。
-- [ ] 短信开关关闭给明确说明；开启后三类场景、图形验证码/频控/占用手机/取消/重试及回登录分别验收。邮箱注册/找回未实现前不得标支持。
+- [ ] 短信开关关闭给明确说明；登录/找回/绑号/设密四类场景启用后，图形验证码/频控/占用手机/取消/重试及回登录分别验收；无模板应拒绝发码，已有测试码不会自动清除。
+- [ ] 邮箱注册/找回两页已接入但服务未开放；先验关闭说明和服务端发码拒绝，普通注册保持默认关闭。实际编译/浏览器、邮件服务及验证码有效期/频控、占用邮箱、密码确认、返回登录/回跳仍待验，不标真实可用。
 - [ ] 协议默认关闭与主动开启分开验；有效 URL、缺 URL、键盘/文字点击/弹窗、不自动同意、返回后表单保留。
-- [ ] 退出远端失败仍清本地，浏览器返回/刷新不恢复保护内容；当前注销安全禁用，profile 与直达页不产生 closeAccount 写请求。后端 F13 修复并另获授权后，才用可销毁测试账号验跨会话/最后 admin/取消/失败/成功与数据政策。
+- [ ] 退出远端失败仍清本地，浏览器返回/刷新不恢复保护内容；当前注销前后端关闭，profile 与直达页不产生 closeAccount 写请求，服务端直接调用也应拒绝。后端 F13 修复并另获授权后，才用可销毁测试账号验跨会话/最后 admin/取消/失败/成功与数据政策。
 
 ### A04 应用统一新增/编辑（基础已实现，整体部分实现）
 
