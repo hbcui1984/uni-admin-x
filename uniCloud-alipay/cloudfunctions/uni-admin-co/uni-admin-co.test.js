@@ -108,6 +108,14 @@ test('邮箱注册保留原验证码校验流程', async () => {
   expect(uniCloudTest.db.collection('uni-id-users').add).not.toHaveBeenCalled()
 })
 
+test('注销对普通用户和管理员均关闭，不更新账户', async () => {
+  for (const role of ['member', 'admin']) {
+    tables['uni-id-users'][0].role = [role]
+    expect((await registrationApi('mock-member-token').closeAccount()).errCode).toBe('ACCOUNT_DEACTIVATION_DISABLED')
+  }
+  expect(uniCloudTest.db.collection('uni-id-users').update).not.toHaveBeenCalled()
+})
+
 test('updateUser 阻止本人禁用和去掉 admin，允许普通资料更新', async () => {
   tables['uni-id-users'][0].role = ['admin']
   const object = registrationApi('mock-admin-token')
